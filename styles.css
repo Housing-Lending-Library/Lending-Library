@@ -214,3 +214,17 @@ tbody tr:last-child td{border-bottom:0}
 .dot-row.out{background:var(--accent-soft);color:var(--accent)}
 .dot-row.back{background:var(--ok-soft);color:var(--ok)}
 .dot-row.late{background:var(--late-soft);color:var(--late)}
+
+/* experimental tab (preview only) */
+.exp{padding:16px;display:grid;gap:12px}
+.exp-field{display:grid;gap:4px;max-width:420px}
+.exp-field label{font-size:13px;font-weight:500}
+.exp-list{margin:0;padding-left:18px;display:grid;gap:6px;max-width:75ch}
+.mail{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg)}
+.mail-head{padding:10px 12px;border-bottom:1px solid var(--line);display:grid;gap:3px;font-size:14px;overflow-wrap:anywhere}
+.mail-body{margin:0;padding:12px;font:14px/1.55 var(--font-body);white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
+.cal-preview{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.ol-event{border-left:4px solid var(--accent);background:var(--bg);border-radius:6px;padding:8px 10px;display:grid;gap:2px}
+.ol-event.back{border-left-color:var(--ok)}
+.ol-time{font-size:12px;color:var(--muted)}
+.ol-title{font-weight:600;font-size:14px;overflow-wrap:anywhere}

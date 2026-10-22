@@ -286,7 +286,7 @@ let mainEl = null, views = null, raf = 0;
 function schedule() { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; refresh(); }); }
 function refresh() { if (!mainEl || !views) return; updateNavBadges(); views[S.view].update(); }
 
-const TABS = [["today", "Today"], ["calendar", "Calendar"], ["loans", "Loans"], ["items", "Inventory"], ["borrowers", "Borrowers"], ["logs", "Logs"], ["settings", "Settings"]];
+const TABS = [["today", "Today"], ["calendar", "Calendar"], ["loans", "Loans"], ["items", "Inventory"], ["borrowers", "Borrowers"], ["logs", "Logs"], ["experimental", "Experimental"], ["settings", "Settings"]];
 function renderShell() {
   app.textContent = "";
   const tabs = TABS.filter(([k]) => k !== "settings" || isSup());
@@ -1301,6 +1301,102 @@ function settingsView() {
   };
 }
 
+// ---------------- experimental (preview only) ----------------
+// Ideas that need university IT before they can work: emails and calendar events sent from the Housing mailbox.
+// Everything here is a preview. Nothing is sent, saved or connected.
+function overdueEmail(l, newDueIso) {
+  const items = (l.itemNames || []).join(", ");
+  const where = pudoLabel(l.pudo);
+  const shortItems = (l.itemNames || []).map((n) => n.replace(/\s+[A-Z]-\d+$/, "")).filter((v, i, a) => a.indexOf(v) === i).join(", ");
+  return {
+    subject: "Lending Library: please return your " + shortItems + " (overdue since " + fmtDay(l.returnAt) + ")",
+    body: [
+      "Dear " + (norm(l.borrowerName) || "student") + ",",
+      "",
+      "On " + fmtDay(l.pickupAt) + " you borrowed " + items + " from the Lending Library at " + where + ". It was due back on " + fmtDay(l.returnAt) + " at " + fmtTime(l.returnAt) + " and has not been returned yet.",
+      "",
+      "Please return it to " + where + " by " + fmtDay(newDueIso) + ", " + fmtTime(newDueIso) + ". Items must be returned to the same PUDO point they were borrowed from.",
+      "",
+      "Late returns are charged €" + S.settings.lateFeePerDay + " per day, up to the item's replacement value. The Housing Team will contact you about any charges; unpaid charges may be deducted from your housing deposit, and you can dispute a charge in writing within 7 days of being informed. Repeated late returns can lead to a suspension from borrowing of up to 3 months.",
+      "",
+      "If you have already returned the item, or there's a problem with it, please reply to this email.",
+      "",
+      "Kind regards,",
+      "Housing Team",
+    ].join("\n"),
+  };
+}
+function exampleLoan() {
+  const d = (off, hh) => { const x = new Date(); x.setDate(x.getDate() + off); x.setHours(hh, 0, 0, 0); return x.toISOString(); };
+  return { id: "example", borrowerName: "Example Student", matric: "30000000", itemNames: ["Vacuum V-01"], pudo: (pudos().find((p) => p.active) || {}).id, pickupAt: d(-3, 14), returnAt: d(-1, 14), status: "out" };
+}
+function experimentalView() {
+  let mailBox, calBox, loanSel, dueIn;
+  return {
+    mount(root) {
+      const soon = new Date(); soon.setDate(soon.getDate() + 1); soon.setMinutes(0, 0, 0);
+      loanSel = h("select", { id: "x-loan", style: "width:auto;max-width:100%" });
+      dueIn = h("input", { id: "x-due", type: "datetime-local", value: toInput(soon), style: "width:auto" });
+      loanSel.addEventListener("change", () => this.update());
+      dueIn.addEventListener("change", () => this.update());
+      mailBox = h("div", { class: "section" });
+      calBox = h("div", { class: "section" });
+      root.append(
+        h("div", { class: "toolbar", style: "justify-content:space-between" }, h("h2", null, "Experimental ", h("span", { class: "pill booked", text: "Preview" }))),
+        h("div", { class: "banner warn", text: "Ideas we want to discuss with university IT. Nothing on this page is sent, saved or connected yet." }),
+        h("section", { class: "panel exp" },
+          h("h2", { text: "1. Automatic overdue emails from the Housing mailbox" }),
+          h("p", { class: "muted", text: "When an item isn't returned, the site would email the student from the Housing address, with the right items, dates and PUDO point filled in, and log it as a contact attempt. Replies would land in the Housing inbox." }),
+          h("div", { class: "toolbar" }, field("Overdue loan", loanSel), field("New return deadline", dueIn)),
+          h("div", { class: "exp-field" }, h("label", { for: "x-email", text: "Student email (would be saved once per student)" }), h("input", { id: "x-email", type: "email", disabled: true, placeholder: "name@constructor.university — not stored yet" })),
+          mailBox),
+        h("section", { class: "panel exp" },
+          h("h2", { text: "2. Pickups and returns in the Housing Outlook calendar" }),
+          h("p", { class: "muted", text: "Every reservation would appear in the shared Housing calendar automatically, and move or disappear when it's edited or cancelled. Outlook would show its own reminder; email and Teams keep sending the 30- and 15-minute ones." }),
+          calBox),
+        h("section", { class: "panel exp" },
+          h("h2", { text: "What we'd need from IT" }),
+          h("ul", { class: "exp-list" },
+            h("li", { text: "Permission for this site to send email as the Housing mailbox and to add events to the Housing calendar, and nothing else." }),
+            h("li", { text: "Usually that's a Microsoft Entra app registration with Mail.Send and Calendars.ReadWrite, limited to the Housing mailbox by an application access policy. A Power Automate flow on the Housing mailbox is the alternative." }),
+            h("li", { text: "Student university emails stored alongside name and matriculation number (needs the supervisors' OK for data protection)." })),
+          h("p", { class: "muted small", style: "margin:0", text: "Until then: overdue students are contacted by hand and logged with “Log contact”; reminders go to the Housing mailbox and Teams." })));
+    },
+    update() {
+      const overdue = liveLoans().filter((l) => l.status === "out").sort((a, b) => ts(a.returnAt) - ts(b.returnAt));
+      const keep = loanSel.value;
+      loanSel.textContent = "";
+      if (!overdue.length) loanSel.append(h("option", { value: "example", text: "Example (no loans out right now)" }));
+      overdue.forEach((l) => loanSel.append(h("option", { value: l.id, text: (loanState(l) === "overdue" ? "Overdue · " : "Out · ") + l.borrowerName + " · " + (l.itemNames || []).join(", ") })));
+      if (keep && [...loanSel.options].some((o) => o.value === keep)) loanSel.value = keep;
+      const l = overdue.find((x) => x.id === loanSel.value) || overdue[0] || exampleLoan();
+      const due = isNaN(ts(dueIn.value)) ? addDays(Date.now(), 1).toISOString() : new Date(dueIn.value).toISOString();
+      const mail = overdueEmail(l, due);
+      mailBox.textContent = "";
+      mailBox.append(h("div", { class: "mail" },
+        h("div", { class: "mail-head" },
+          h("div", null, h("span", { class: "muted", text: "From: " }), "Housing mailbox"),
+          h("div", null, h("span", { class: "muted", text: "To: " }), l.borrowerName + " (" + l.matric + ")"),
+          h("div", null, h("span", { class: "muted", text: "Subject: " }), h("b", { text: mail.subject }))),
+        h("pre", { class: "mail-body", text: mail.body })),
+        h("div", { class: "toolbar" },
+          h("button", { class: "btn btn-primary btn-sm", type: "button", disabled: true, title: "Needs university IT", text: "Send from Housing mailbox" }),
+          h("span", { class: "muted small", text: "Not available yet: needs university IT." })));
+      calBox.textContent = "";
+      const evs = eventsBetween(startOfDay(Date.now()), startOfDay(Date.now()) + 7 * DAY);
+      const list = evs.length ? evs.slice(0, 6) : [{ kind: "out", at: addDays(Date.now(), 1).toISOString(), l: exampleLoan() }];
+      calBox.append(h("div", { class: "cal-preview" }, list.map((e) => h("div", { class: "ol-event " + e.kind },
+        h("div", { class: "ol-time mono", text: fmtDay(e.at) + " · " + fmtTime(e.at) + "–" + fmtTime(new Date(ts(e.at) + 30 * MIN).toISOString()) }),
+        h("div", { class: "ol-title", text: (e.kind === "out" ? "Pickup: " : "Return: ") + (e.l.itemNames || []).join(", ") + " (" + e.l.borrowerName + ")" }),
+        h("div", { class: "muted small", text: pudoLabel(e.l.pudo) + " · reminder 30 min before" })))),
+        evs.length ? "" : h("p", { class: "muted small", style: "margin:0", text: "Example event: nothing is scheduled in the next 7 days." }),
+        h("div", { class: "toolbar" },
+          h("button", { class: "btn btn-primary btn-sm", type: "button", disabled: true, title: "Needs university IT", text: "Connect Housing calendar" }),
+          h("span", { class: "muted small", text: "Not available yet: needs university IT." })));
+    },
+  };
+}
+
 // ---------------- sign-in screens ----------------
 function gate(title, text, ...content) {
   app.textContent = "";
@@ -1348,7 +1444,7 @@ let unsubs = [], meUnsub = null, started = false;
 function stopAll() { unsubs.forEach((u) => { try { u(); } catch (e) {} }); unsubs = []; if (meUnsub) { try { meUnsub(); } catch (e) {} meUnsub = null; } started = false; views = null; mainEl = null; }
 
 function startData() {
-  views = { today: todayView(), calendar: calendarView(), loans: loansView(), items: itemsView(), borrowers: borrowersView(), logs: logsView(), settings: settingsView() };
+  views = { today: todayView(), calendar: calendarView(), loans: loansView(), items: itemsView(), borrowers: borrowersView(), logs: logsView(), experimental: experimentalView(), settings: settingsView() };
   const fail = (what) => (err) => { console.error(what, err); toast("Couldn't load " + what + ": " + errText(err), true); };
   let firstSettings = true;
   unsubs.push(api.watch("staff", (d) => { S.staff = d; schedule(); }, fail("staff")));
