@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// Lending Desk database rules.
+// - Only people on the staff list (staff/{their email}) with a confirmed email can read or change anything.
+// - Supervisors additionally manage the staff list and settings, and can delete records.
+// - Nobody outside the staff list can read student data.
+// Paste this into Firebase console → Firestore Database → Rules, then press Publish.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function staffPath() {
+      return /databases/$(database)/documents/staff/$(myEmail());
+    }
+    function isStaff() {
+      return signedIn() && exists(staffPath()) && get(staffPath()).data.active == true;
+    }
+    function isSupervisor() {
+      return isStaff() && get(staffPath()).data.role == 'supervisor';
+    }
+
+    // Anyone signed in may check their own entry (so the site can say whether they have access).
+    match /staff/{email} {
+      allow read: if isStaff() || (signedIn() && email == myEmail());
+      allow write: if isSupervisor();
+    }
+
+    match /settings/{doc} {
+      allow read: if isStaff();
+      allow write: if isSupervisor();
+    }
+
+    match /items/{id} {
+      allow read, create, update: if isStaff();
+      allow delete: if isSupervisor();
+    }
+
+    match /borrowers/{matric} {
+      allow read, create, update: if isStaff();
+      allow delete: if isSupervisor();
+    }
+
+    match /loans/{id} {
+      allow read, create, update: if isStaff();
+      allow delete: if isSupervisor();
+    }
+
+    // Messages for the Housing Team. Staff can queue them; the reminder script sends them.
+    match /outbox/{id} {
+      allow create: if isStaff();
+      allow read: if isSupervisor();
+    }
+  }
+}
