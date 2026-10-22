@@ -293,7 +293,7 @@ function renderShell() {
   if (!tabs.some(([k]) => k === S.view)) S.view = "today";
   app.append(
     h("div", { class: "top" },
-      h("h1", null, "Lending ", h("span", { text: "Desk" })),
+      h("h1", null, "Lending ", h("span", { text: "Library" })),
       h("div", { class: "who" },
         h("span", null, h("b", { text: meRef().name }), " · " + (isSup() ? "Supervisor" : "Student Assistant")),
         api.demo ? null : h("button", { class: "btn btn-ghost btn-sm", onclick: () => api.signOut() }, "Sign out"))),
