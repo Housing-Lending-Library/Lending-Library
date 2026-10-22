@@ -1,4 +1,4 @@
-# Lending Desk
+# Lending Library
 
 Staff tool for the Housing lending library: inventory, loans, borrowers with no-show strikes and bans,
 reminders 30 and 15 minutes before each pickup and return, and logs that mirror the Teams spreadsheets.

@@ -1,7 +1,7 @@
 /**
- * Lending Desk — reminder and notification script (Google Apps Script).
+ * Lending Library — reminder and notification script (Google Apps Script).
  *
- * Runs under the shared lending-desk Google account:
+ * Runs under the shared lending-library Google account:
  *   tick()           every 5 minutes:
  *                      - reminders about 30 and 15 minutes before each pickup and return,
  *                        by email to the Housing mailbox and/or as a Teams channel post;
@@ -13,7 +13,7 @@
  * link it to the Firebase project, set the script properties, then run installTriggers once.
  *
  * Script properties (Project Settings → Script properties):
- *   FIREBASE_PROJECT_ID  required, e.g. lending-desk-4f2a1
+ *   FIREBASE_PROJECT_ID  required, e.g. lending-library-2a993
  *   TEAMS_WEBHOOK_URL    optional, the link from the Teams "Workflows" webhook
  */
 
@@ -75,7 +75,7 @@ function sendReminders_(settings) {
       const patch = {}; patch['remind.' + r.key] = new Date().toISOString();
       // Mark first (with a precondition), so a reminder is never sent twice even if two runs overlap.
       patchPaths_('loans/' + doc.id, patch, doc.updateTime);
-      if (settings.emailReminders !== false && settings.notifyEmail) sendEmail_(settings.notifyEmail, '[Lending Desk] ' + title, lines.join('\n'));
+      if (settings.emailReminders !== false && settings.notifyEmail) sendEmail_(settings.notifyEmail, '[Lending Library] ' + title, lines.join('\n'));
       if (settings.teamsReminders !== false) postTeams_(title, lines);
     } catch (e) {
       Logger.log('Reminder for ' + doc.id + ' skipped: ' + e);
@@ -92,7 +92,7 @@ function sendOutbox_(settings) {
     const m = doc.data;
     try {
       patchPaths_('outbox/' + doc.id, { sentAt: new Date().toISOString() }, doc.updateTime);
-      if (to) sendEmail_(to, m.subject, m.text + '\n\n— Sent by Lending Desk' + (m.by ? ' for ' + m.by.name : ''));
+      if (to) sendEmail_(to, m.subject, m.text + '\n\n— Sent by Lending Library' + (m.by ? ' for ' + m.by.name : ''));
       postTeams_(m.subject, String(m.text).split('\n'));
     } catch (e) { Logger.log('Outbox ' + doc.id + ': ' + e); }
   });
@@ -130,11 +130,11 @@ function morningSummary() {
     if (!list.length) return [];
     return ['', title + ' (' + list.length + ')'].concat(list.map(function (x) { return '  ' + fmt(x, long) + '  ' + x.text; }));
   };
-  const lines = ['Lending desk for ' + Utilities.formatDate(now, TZ, 'EEEE d MMMM') + ':']
+  const lines = ['Lending library for ' + Utilities.formatDate(now, TZ, 'EEEE d MMMM') + ':']
     .concat(section('Needs action', late, true), section('Today', today), section('Tomorrow', tomorrow));
-  const subject = '[Lending Desk] ' + (late.length ? late.length + ' need action, ' : '') + today.length + ' today';
+  const subject = '[Lending Library] ' + (late.length ? late.length + ' need action, ' : '') + today.length + ' today';
   if (settings.notifyEmail) sendEmail_(settings.notifyEmail, subject, lines.join('\n'));
-  if (settings.teamsReminders !== false) postTeams_(subject.replace('[Lending Desk] ', 'Morning summary: '), lines.slice(1));
+  if (settings.teamsReminders !== false) postTeams_(subject.replace('[Lending Library] ', 'Morning summary: '), lines.slice(1));
 }
 
 // ---------- cleanup (data retention) ----------
@@ -158,7 +158,7 @@ function cleanup() {
 // ---------- sending ----------
 
 function sendEmail_(to, subject, text) {
-  MailApp.sendEmail({ to: to, subject: subject, body: text, name: 'Lending Desk' });
+  MailApp.sendEmail({ to: to, subject: subject, body: text, name: 'Lending Library' });
 }
 
 /** Posts to a Teams channel through a "Workflows" webhook (Adaptive Card format). Does nothing if no URL is set. */
@@ -266,7 +266,7 @@ function startOfDay_(d) { return new Date(Utilities.formatDate(d, TZ, "yyyy-MM-d
 function sendTest() {
   const settings = getSettings_();
   Logger.log('Database OK. Housing mailbox: ' + (settings.notifyEmail || '(not set in Settings yet)'));
-  if (settings.notifyEmail) sendEmail_(settings.notifyEmail, '[Lending Desk] Test reminder', 'If you can read this, reminder emails work. You can delete this email.');
-  postTeams_('Lending Desk test', ['If you can read this, Teams reminders work.']);
+  if (settings.notifyEmail) sendEmail_(settings.notifyEmail, '[Lending Library] Test reminder', 'If you can read this, reminder emails work. You can delete this email.');
+  postTeams_('Lending Library test', ['If you can read this, Teams reminders work.']);
   Logger.log('Test sent. Check the Housing mailbox' + (PropertiesService.getScriptProperties().getProperty('TEAMS_WEBHOOK_URL') ? ' and the Teams channel.' : '. (No Teams link set, so nothing was posted to Teams.)'));
 }

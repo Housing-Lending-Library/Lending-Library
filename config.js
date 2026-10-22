@@ -1,4 +1,4 @@
-// Lending Desk configuration.
+// Lending Library configuration.
 export const CONFIG = {
   firebase: {
     apiKey: "AIzaSyA1A_jrhAIWduYPOtSLrMrrTRvr3EI_7oM",

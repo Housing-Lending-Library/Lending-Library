@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Lending Desk database rules.
+// Lending Library database rules.
 // - Only people on the staff list (staff/{their email}) with a confirmed email can read or change anything.
 // - Supervisors additionally manage the staff list and settings, and can delete records.
 // - Nobody outside the staff list can read student data.

@@ -1,4 +1,4 @@
-// Lending Desk — staff tool for the Housing Lending Library.
+// Lending Library — staff tool for the Housing Lending Library.
 // Data lives in Firebase (Firestore). With no Firebase config, it runs in demo mode with sample data.
 import { CONFIG } from "./config.js";
 
@@ -1304,7 +1304,7 @@ function settingsView() {
 // ---------------- sign-in screens ----------------
 function gate(title, text, ...content) {
   app.textContent = "";
-  app.append(h("div", { class: "gate" }, h("h1", null, "Lending ", h("span", { text: "Desk" })), h("h2", { text: title }), text ? h("p", { class: "muted", text }) : null, ...content));
+  app.append(h("div", { class: "gate" }, h("h1", null, "Lending ", h("span", { text: "Library" })), h("h2", { text: title }), text ? h("p", { class: "muted", text }) : null, ...content));
 }
 function renderSignIn(mode = "in", note = "") {
   const email = h("input", { id: "a-email", type: "email", autocomplete: "username", placeholder: "you@university email" });

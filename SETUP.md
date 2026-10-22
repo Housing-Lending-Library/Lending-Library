@@ -1,4 +1,4 @@
-# Lending Desk — setup guide
+# Lending Library — setup guide
 
 This turns the files in this folder into a real website with shared data, sign-in and reminders.
 Everything is free. Allow about an hour the first time; it can be split over several days.
@@ -19,7 +19,7 @@ Everything is free. Allow about an hour the first time; it can be split over sev
 
 ## Step 1 — Shared Google account (10 min)
 
-1. Go to <https://accounts.google.com/signup> and create e.g. `housing.lendingdesk@gmail.com`.
+1. Go to <https://accounts.google.com/signup> and create e.g. `housing.lendinglibrary@gmail.com`.
 2. Use a strong password and turn on 2-step verification.
 3. Share the login with the co-owner, and keep it somewhere a supervisor can reach too.
 4. Be signed in as this account for steps 2, 5 and 6.
@@ -28,7 +28,7 @@ Everything is free. Allow about an hour the first time; it can be split over sev
 
 ## Step 2 — Firebase project (15 min)
 
-1. <https://console.firebase.google.com> → **Create a project** → name `lending-desk` (Firebase may add a suffix like `lending-desk-4f2a1`; that full name is your **project ID**).
+1. <https://console.firebase.google.com> → **Create a project** → name `lending-library` (Firebase may add a suffix like `lending-library-2a993`; that full name is your **project ID**).
 2. Turn **off** Google Analytics → create. It stays on the free **Spark** plan; never add a card.
 
 **Database**
@@ -41,19 +41,19 @@ Everything is free. Allow about an hour the first time; it can be split over sev
 **Sign-in**
 
 7. **Build → Authentication → Get started → Sign-in method → Email/Password → Enable** (leave "Email link" off) → **Save**.
-8. **Authentication → Templates**: optionally change the sender name to "Lending Desk" so the confirmation emails are recognisable.
+8. **Authentication → Templates**: optionally change the sender name to "Lending Library" so the confirmation emails are recognisable.
 
 **Website settings**
 
-9. Project overview → the **`</>`** (Web) icon → nickname `lending-desk-web` → **Register app** (no Firebase Hosting).
+9. Project overview → the **`</>`** (Web) icon → nickname `lending-library-web` → **Register app** (no Firebase Hosting).
 10. Copy the values from the `firebaseConfig` block into `config.js`:
 
 ```js
 firebase: {
   apiKey: "AIza…",
-  authDomain: "lending-desk-4f2a1.firebaseapp.com",
-  projectId: "lending-desk-4f2a1",
-  storageBucket: "lending-desk-4f2a1.firebasestorage.app",
+  authDomain: "lending-library-2a993.firebaseapp.com",
+  projectId: "lending-library-2a993",
+  storageBucket: "lending-library-2a993.firebasestorage.app",
   messagingSenderId: "1234567890",
   appId: "1:1234567890:web:abc123",
 },
@@ -78,12 +78,12 @@ Everyone else is added from the website later (**Settings → Staff with access*
 ## Step 3 — GitHub (15 min)
 
 1. Make a GitHub account if needed: <https://github.com/signup>.
-2. Create a free organisation: <https://github.com/organizations/plan> → **Free** → e.g. `housing-lending-desk`.
-3. **New repository** → `lending-desk` → **Public** → Create. (Public is fine: the code has no passwords or student data.)
+2. Create a free organisation: <https://github.com/organizations/plan> → **Free** → e.g. `housing-lending-library`.
+3. **New repository** → `Lending-Library` → **Public** → Create. (Public is fine: the code has no passwords or student data.)
 4. **Add file → Upload files** → drag in everything from this folder (with your filled-in `config.js`) → **Commit changes**.
 5. Repository **Settings → Pages** → Source **Deploy from a branch** → branch `main`, folder `/ (root)` → **Save**.
-6. A minute later the page shows the site address, e.g. `https://housing-lending-desk.github.io/lending-desk/`.
-7. Back in Firebase: **Authentication → Settings → Authorized domains → Add domain** → `housing-lending-desk.github.io` (no `https://`, no path).
+6. A minute later the page shows the site address, e.g. `https://housing-lending-library.github.io/Lending-Library/`.
+7. Back in Firebase: **Authentication → Settings → Authorized domains → Add domain** → `housing-lending-library.github.io` (no `https://`, no path).
 8. Organisation **People → Invite member** → the co-owner (and other IT people) as **Owner**. Anyone with access can edit the code on GitHub; the live site updates a minute or two after each change.
 
 ---
@@ -107,7 +107,7 @@ The reminder script needs permission to read the database. That permission comes
 
 1. <https://console.cloud.google.com> (as the shared account) → choose your Firebase project at the top.
 2. **APIs & Services → OAuth consent screen → Get started** (if it says it's already configured, go to step 3):
-   app name `Lending Desk`, support email = shared account, audience **External**, contact email = shared account → **Create**.
+   app name `Lending Library`, support email = shared account, audience **External**, contact email = shared account → **Create**.
 3. **Audience → Publish app → Confirm**, so it shows *In production*. (In *Testing*, Google stops the script every 7 days.) No verification by Google is needed.
 4. **Dashboard / Home**: copy the **Project number** (digits only).
 
@@ -115,16 +115,16 @@ The reminder script needs permission to read the database. That permission comes
 
 ## Step 6 — Reminder script (15 min)
 
-1. <https://script.google.com> (as the shared account) → **New project** → rename it `Lending Desk reminders`.
+1. <https://script.google.com> (as the shared account) → **New project** → rename it `Lending Library reminders`.
 2. Replace the code in `Code.gs` with all of `apps-script/Code.gs` from this folder.
 3. **Project Settings** (gear icon):
    - Tick **Show "appsscript.json" manifest file in editor**.
    - **Google Cloud Platform (GCP) Project → Change project** → paste the project number → **Set project**.
    - **Script properties → Add script property**:
-     - `FIREBASE_PROJECT_ID` = your project ID (e.g. `lending-desk-4f2a1`)
+     - `FIREBASE_PROJECT_ID` = your project ID (e.g. `lending-library-2a993`)
      - `TEAMS_WEBHOOK_URL` = the Teams link from step 7 (add it later if you don't have it yet)
 4. **Editor** → open `appsscript.json` → replace it with `apps-script/appsscript.json` → save.
-5. Pick **`sendTest`** in the function menu → **Run**. Allow the permissions (if Google says the app isn't verified: **Advanced → Go to Lending Desk**; it's your own script).
+5. Pick **`sendTest`** in the function menu → **Run**. Allow the permissions (if Google says the app isn't verified: **Advanced → Go to Lending Library**; it's your own script).
    The log should say "Database OK" and a test email should reach the Housing mailbox.
 6. Pick **`installTriggers`** → **Run**. From now on:
    - every 5 minutes: reminders about 30 and 15 minutes before each pickup and return, plus any escalations or suspensions;
@@ -137,7 +137,7 @@ The reminder script needs permission to read the database. That permission comes
 ## Step 7 — Teams channel (optional, 5 min)
 
 1. In Teams, open the channel where reminders should appear → **⋯ → Workflows**.
-2. Choose **"Send webhook alerts to a channel"** (it may be called "Post to a channel when a webhook request is received") → name it `Lending Desk` → pick the team and channel → **Add workflow**.
+2. Choose **"Send webhook alerts to a channel"** (it may be called "Post to a channel when a webhook request is received") → name it `Lending Library` → pick the team and channel → **Add workflow**.
 3. Copy the long link it shows. Add it in the script as `TEAMS_WEBHOOK_URL` (step 6.3), then run **`sendTest`** again: a test post should appear in the channel.
 4. Make sure everyone has notifications on for that channel (channel **⋯ → Channel notifications → All activity**).
 
