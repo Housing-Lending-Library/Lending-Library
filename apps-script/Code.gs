@@ -5,6 +5,7 @@
  *   tick()           every 5 minutes:
  *                      - reminders about 30 and 15 minutes before each pickup and return,
  *                        by email to the Housing mailbox and/or as a Teams channel post;
+ *                      - a follow-up 30 minutes after a pickup or return that nobody has logged yet;
  *                      - sends queued messages for the Housing Team (escalations, suspensions).
  *   morningSummary() every day around 7:00: what's late, today and tomorrow.
  *   cleanup()        every night: deletes closed loans older than the retention period.
@@ -19,6 +20,8 @@
 
 const TZ = 'Europe/Berlin';
 const OFFSETS = [30, 15]; // minutes before each pickup/return
+const FOLLOW_UP = 30;      // minutes after a pickup/return that still isn't logged on the site
+const FOLLOW_UP_WINDOW = 12 * 60; // stop nudging after this many minutes (the morning summary covers older ones)
 
 // ---------- entry points ----------
 
@@ -57,18 +60,31 @@ function sendReminders_(settings) {
         const next = OFFSETS[i + 1] || 0;
         if (!remind[key] && now >= t - off * 60000 && now < t - next * 60000) due.push({ key: key, kind: p[0], off: off, at: p[1] });
       });
+      // Follow-up: 30 min after the pickup/return time, if nobody has logged it on the site yet.
+      // A pickup is unlogged while the loan is still "booked"; a return while it is still "out".
+      const unlogged = (p[0] === 'out' && l.status === 'booked') || (p[0] === 'back' && l.status === 'out');
+      const lateKey = p[0] + 'Late';
+      if (unlogged && !remind[lateKey] && now >= t + FOLLOW_UP * 60000 && now < t + FOLLOW_UP_WINDOW * 60000) due.push({ key: lateKey, kind: p[0], off: -1, at: p[1], late: true });
     });
     if (!due.length) return;
-    // Only the most urgent one if two fall due in the same run.
+    // Only the most urgent one if two fall due in the same run (follow-ups first).
     const r = due.sort(function (a, b) { return a.off - b.off; })[0];
     const place = pudoText_(settings, l.pudo);
     const what = r.kind === 'out' ? 'Pickup' : 'Return';
-    const title = 'In ' + Math.max(1, Math.round((new Date(r.at).getTime() - now) / 60000)) + ' min: ' + what + ' at ' + place;
+    const mins = Math.max(1, Math.round(Math.abs(new Date(r.at).getTime() - now) / 60000));
+    const title = r.late
+      ? 'Not logged yet: ' + what.toLowerCase() + ' at ' + place + ' was ' + mins + ' min ago'
+      : 'In ' + mins + ' min: ' + what + ' at ' + place;
+    const todo = r.late
+      ? (r.kind === 'out'
+        ? 'If the item was handed over, press "Hand over" on the site. If the student didn\'t come and didn\'t cancel, log a no-show.'
+        : 'If the item came back, press "Returned" on the site. If it is not back, it is overdue: start contacting the student (Step 7).')
+      : (r.kind === 'out' ? 'Check the campus card and the ban list, then brief the borrower.' : 'Compare the condition with pickup: clean, complete, not damaged.');
     const lines = [
-      what + ' at ' + Utilities.formatDate(new Date(r.at), TZ, 'HH:mm') + ' — ' + place,
+      what + ' ' + (r.late ? 'was due' : 'at') + ' ' + Utilities.formatDate(new Date(r.at), TZ, 'HH:mm') + ' — ' + place,
       'Items: ' + (l.itemNames || []).join(', '),
       'Student: ' + l.borrowerName + ' (' + l.matric + ')',
-      r.kind === 'out' ? 'Check the campus card and the ban list, then brief the borrower.' : 'Compare the condition with pickup: clean, complete, not damaged.',
+      todo,
     ];
     if (l.notes) lines.push('Notes: ' + l.notes);
     try {

@@ -127,7 +127,7 @@ The reminder script needs permission to read the database. That permission comes
 5. Pick **`sendTest`** in the function menu → **Run**. Allow the permissions (if Google says the app isn't verified: **Advanced → Go to Lending Library**; it's your own script).
    The log should say "Database OK" and a test email should reach the Housing mailbox.
 6. Pick **`installTriggers`** → **Run**. From now on:
-   - every 5 minutes: reminders about 30 and 15 minutes before each pickup and return, plus any escalations or suspensions;
+   - every 5 minutes: reminders about 30 and 15 minutes before each pickup and return, a follow-up 30 minutes after any pickup or return that still isn't logged on the site, plus any escalations or suspensions;
    - around 7:00: the morning summary;
    - around 2:00: old closed loans are deleted (after the months set in Settings).
 7. **Share** (top right) → add the co-owner as **Editor**.
@@ -161,7 +161,7 @@ Reserve at the TSO with **New reservation** (it checks the contract amendment, b
 ## Free limits
 
 - Firebase Spark: 50,000 reads and 20,000 writes a day; up to 1,000 confirmation emails and 150 password-reset emails a day.
-- Apps Script with a Gmail account: about 100 emails a day. A typical loan sends 4 reminders. If you go over, switch email reminders off in Settings and rely on Teams.
+- Apps Script with a Gmail account: about 100 emails a day. A typical loan sends 4 reminders (more if a pickup or return isn't logged in time). If you go over, switch email reminders off in Settings and rely on Teams.
 
 ## Troubleshooting
 
