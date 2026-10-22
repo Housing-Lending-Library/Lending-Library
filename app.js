@@ -978,7 +978,7 @@ function itemsView() {
       pudoSel = h("select", { id: "item-pudo", "aria-label": "PUDO point", style: "width:auto" }, h("option", { value: "all", text: "All PUDO points" }), pudos().map((p) => h("option", { value: p.id, text: p.room + " · " + p.building })));
       pudoSel.value = S.itemPudo;
       pudoSel.addEventListener("change", () => { S.itemPudo = pudoSel.value; this.update(); });
-      root.append(h("div", { class: "toolbar", style: "justify-content:space-between" }, h("h2", { text: "Inventory" }), h("button", { class: "btn btn-primary", type: "button", onclick: () => openItemForm(null), text: "Add item" })),
+      root.append(h("div", { class: "toolbar", style: "justify-content:space-between" }, h("h2", { text: "Inventory" }), h("div", { class: "toolbar" }, h("button", { class: "btn btn-ghost", type: "button", onclick: () => openImport(), text: "Import list" }), h("button", { class: "btn btn-primary", type: "button", onclick: () => openItemForm(null), text: "Add item" }))),
         h("div", { class: "toolbar" }, search, pudoSel), chips, box);
     },
     update() {
@@ -1021,6 +1021,219 @@ function itemsView() {
       })));
     },
   };
+}
+
+// ---------------- bulk import (CSV / TSV / Excel / ODS / pasted rows) ----------------
+const IMPORT_FIELDS = [
+  ["name", "Item name", ["name", "item", "item name", "artikel", "gegenstand", "bezeichnung"]],
+  ["tag", "Tag / ID", ["tag", "id", "code", "label", "number", "nr", "inventory number", "asset"]],
+  ["category", "Category", ["category", "type", "kategorie", "group"]],
+  ["pudo", "PUDO point", ["pudo", "pudo point", "location", "point", "building", "college", "standort", "room"]],
+  ["value", "Replacement value (€)", ["value", "replacement value", "replacement", "price", "cost", "wert", "preis", "€"]],
+  ["qty", "Quantity", ["quantity", "qty", "amount", "count", "number of items", "anzahl", "stück", "pcs"]],
+  ["notes", "Notes / included", ["notes", "note", "included", "includes", "description", "contents", "beschreibung", "comment"]],
+];
+const keyOf = (s) => lc(s).replace(/[^a-z0-9€äöüß ]+/g, " ").replace(/\s+/g, " ").trim();
+function sniffDelimiter(text) {
+  const first = text.split(/\r?\n/).find((l) => l.trim()) || "";
+  const counts = [["\t", (first.match(/\t/g) || []).length], [";", (first.match(/;/g) || []).length], [",", (first.match(/,/g) || []).length]];
+  counts.sort((a, b) => b[1] - a[1]);
+  return counts[0][1] ? counts[0][0] : ",";
+}
+function parseDelimited(text) {
+  const d = sniffDelimiter(text), rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"' && cell === "") q = true;
+    else if (c === d) { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.map((r) => r.map((c) => c.trim())).filter((r) => r.some((c) => c !== ""));
+}
+function decodeText(buf) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buf).replace(/^﻿/, ""); }
+  catch (e) { return new TextDecoder("windows-1252").decode(buf); } // Excel on Windows often saves CSV like this
+}
+let xlsxLoading = null;
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!xlsxLoading) xlsxLoading = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+    s.onload = () => res(window.XLSX);
+    s.onerror = () => { xlsxLoading = null; rej(new Error("Couldn't load the Excel reader. Check the internet connection, or save the file as CSV.")); };
+    document.head.append(s);
+  });
+  return xlsxLoading;
+}
+async function readRowsFromFile(file) {
+  const name = lc(file.name), buf = await file.arrayBuffer();
+  if (/\.(xlsx|xlsm|xls|ods)$/.test(name)) {
+    const XLSX = await loadXlsx();
+    const wb = XLSX.read(buf, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" }).map((r) => r.map((c) => norm(c))).filter((r) => r.some((c) => c !== ""));
+  }
+  if (/\.(csv|tsv|txt)$/.test(name) || !name.includes(".")) return parseDelimited(decodeText(buf));
+  throw new Error("Use a .csv, .tsv, .xlsx, .xls or .ods file.");
+}
+function guessMapping(header) {
+  const map = {};
+  IMPORT_FIELDS.forEach(([k, , words]) => {
+    const i = header.findIndex((hd, idx) => !Object.values(map).includes(idx) && words.some((w) => keyOf(hd) === w || keyOf(hd).startsWith(w + " ") || keyOf(hd).includes(w) && w.length > 3));
+    if (i >= 0) map[k] = i;
+  });
+  return map;
+}
+function matchPudo(v) {
+  const k = keyOf(v);
+  if (!k) return null;
+  const p = pudos().find((p) => [p.id, p.room, p.building].some((x) => keyOf(x) === k))
+    || pudos().find((p) => [p.room, p.building].some((x) => keyOf(x).includes(k) || k.includes(keyOf(p.room))));
+  return p ? p.id : null;
+}
+function tagPrefix(name) {
+  const words = norm(name).split(/[\s\-\/]+/).filter((w) => w && !/^(and|of|the|for|with|und|mit|&)$/i.test(w));
+  return (words.length === 1 ? words[0].slice(0, 1) : words.slice(0, 3).map((w) => w[0]).join("")).toUpperCase().replace(/[^A-Z0-9]/g, "") || "IT";
+}
+function parseMoney(v) {
+  const s = norm(v).replace(/[€\s]/g, "").replace(/eur/i, "");
+  if (!s) return null;
+  const n = Number(/,\d{1,2}$/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, ""));
+  return isFinite(n) && n >= 0 ? n : undefined;
+}
+function buildImport(rows, map, hasHeader, defaultPudo) {
+  const data = hasHeader ? rows.slice(1) : rows;
+  const used = new Set(S.items.map((i) => lc(i.tag)).filter(Boolean));
+  const nextNo = {};
+  const nextTag = (prefix) => {
+    if (!(prefix in nextNo)) {
+      const nums = S.items.map((i) => (i.tag || "").match(new RegExp("^" + prefix + "-(\\d+)$", "i"))).filter(Boolean).map((m) => Number(m[1]));
+      nextNo[prefix] = (nums.length ? Math.max(...nums) : 0) + 1;
+    }
+    let t;
+    do { t = prefix + "-" + pad(nextNo[prefix]++); } while (used.has(lc(t)));
+    return t;
+  };
+  const out = [];
+  data.forEach((r, i) => {
+    const get = (k) => (map[k] === undefined || map[k] === "" ? "" : norm(r[Number(map[k])]));
+    const line = i + (hasHeader ? 2 : 1);
+    const name = get("name");
+    if (!name) { out.push({ line, skip: "No item name" }); return; }
+    const qtyRaw = get("qty"), qty = qtyRaw === "" ? 1 : parseInt(qtyRaw, 10);
+    if (!(qty >= 1 && qty <= 200)) { out.push({ line, name, skip: "Quantity \"" + qtyRaw + "\" isn't a number from 1 to 200" }); return; }
+    const value = parseMoney(get("value"));
+    if (value === undefined) { out.push({ line, name, skip: "Replacement value \"" + get("value") + "\" isn't a number" }); return; }
+    const pudoRaw = get("pudo"), pudo = matchPudo(pudoRaw) || defaultPudo;
+    const warn = pudoRaw && !matchPudo(pudoRaw) ? "PUDO \"" + pudoRaw + "\" not recognised, using " + pudoShort(defaultPudo) : "";
+    const givenTag = get("tag");
+    for (let n = 0; n < qty; n++) {
+      let tag = givenTag && qty === 1 ? givenTag : givenTag ? givenTag + "-" + pad(n + 1) : nextTag(tagPrefix(name));
+      if (used.has(lc(tag))) { out.push({ line, name, tag, skip: "Tag " + tag + " already exists" }); continue; }
+      used.add(lc(tag));
+      out.push({ line, item: { name, tag, category: get("category"), pudo, replacementValue: value, notes: get("notes") }, warn });
+    }
+  });
+  return out;
+}
+function importTemplate() {
+  return [["Item name", "Tag / ID", "Category", "PUDO point", "Replacement value (€)", "Quantity", "Notes / included"],
+    ["Vacuum", "", "Cleaning", "TSO", "120", "4", "Hose, 2 nozzles"],
+    ["Iron", "I-01", "Household", "TSO", "30", "1", ""],
+    ["Pool set", "", "Games", "NC-215", "", "1", "2 cues, 16 balls, holder"]];
+}
+
+function openImport() {
+  let rows = [], map = {};
+  const file = h("input", { id: "imp-file", type: "file", accept: ".csv,.tsv,.txt,.xlsx,.xlsm,.xls,.ods" });
+  const paste = h("textarea", { id: "imp-paste", rows: 3, placeholder: "…or copy the rows in Excel (including the header row) and paste them here" });
+  const hasHeader = check("imp-header", "First row is the column names", true);
+  const def = pudoSelect("imp-pudo", (pudos().find((p) => p.active) || {}).id, true);
+  const mapBox = h("div", { class: "section" });
+  const preview = h("div", { class: "section" });
+  const msg = h("p", { class: "err", role: "alert" });
+  let parsed = [];
+
+  function drawMapping() {
+    mapBox.textContent = "";
+    if (!rows.length) return;
+    const header = hasHeader.input.checked ? rows[0] : rows[0].map((_, i) => "Column " + (i + 1));
+    const grid = h("div", { class: "grid3" });
+    IMPORT_FIELDS.forEach(([k, label]) => {
+      const sel = h("select", { id: "imp-map-" + k }, h("option", { value: "", text: k === "name" ? "Choose a column" : "(none)" }), header.map((hd, i) => h("option", { value: String(i), text: hd || "Column " + (i + 1) })));
+      sel.value = map[k] === undefined ? "" : String(map[k]);
+      sel.addEventListener("change", () => { if (sel.value === "") delete map[k]; else map[k] = Number(sel.value); drawPreview(); });
+      grid.append(field(label, sel));
+    });
+    mapBox.append(h("span", { class: "label", text: "Which column is which (filled in automatically, change if wrong)" }), grid);
+  }
+  function drawPreview() {
+    preview.textContent = "";
+    if (!rows.length) return;
+    if (map.name === undefined) { preview.append(h("div", { class: "banner warn", text: "Choose which column holds the item name." })); parsed = []; return; }
+    parsed = buildImport(rows, map, hasHeader.input.checked, def.value);
+    const ok = parsed.filter((p) => p.item), skipped = parsed.filter((p) => p.skip);
+    preview.append(h("div", { class: "banner " + (ok.length ? "info" : "warn"), text: ok.length + " item" + (ok.length === 1 ? "" : "s") + " ready to add" + (skipped.length ? ", " + skipped.length + " row" + (skipped.length === 1 ? "" : "s") + " skipped (see below)" : "") + "." }));
+    preview.append(h("div", { class: "table-wrap", style: "max-height:300px;overflow:auto" }, h("table", null,
+      h("thead", null, h("tr", null, ["Row", "Item", "Tag", "PUDO", "Value", "Category", "Notes", ""].map((c) => h("th", { text: c })))),
+      h("tbody", null, parsed.slice(0, 300).map((p) => p.item
+        ? h("tr", null, [p.line, p.item.name, p.item.tag, pudoShort(p.item.pudo), p.item.replacementValue === null ? "—" : euro(p.item.replacementValue), p.item.category || "", p.item.notes || "", p.warn || "✓"].map((c) => h("td", { text: String(c) })))
+        : h("tr", { class: "skip" }, [p.line, p.name || "", p.tag || "", "", "", "", "", "Skipped: " + p.skip].map((c) => h("td", { text: String(c) }))))))));
+    if (parsed.length > 300) preview.append(h("p", { class: "muted small", text: "Showing the first 300 rows." }));
+  }
+  function load(newRows) {
+    rows = newRows; msg.textContent = "";
+    if (!rows.length) { msg.textContent = "No rows found."; mapBox.textContent = ""; preview.textContent = ""; return; }
+    map = hasHeader.input.checked ? guessMapping(rows[0]) : {};
+    drawMapping(); drawPreview();
+  }
+  file.addEventListener("change", async () => {
+    if (!file.files[0]) return;
+    rows = []; parsed = []; mapBox.textContent = ""; preview.textContent = ""; paste.value = "";
+    msg.textContent = "Reading " + file.files[0].name + "…";
+    try { load(await readRowsFromFile(file.files[0])); } catch (e) { msg.textContent = e.message; }
+  });
+  paste.addEventListener("input", () => { if (norm(paste.value)) load(parseDelimited(paste.value)); });
+  hasHeader.input.addEventListener("change", () => { if (rows.length) load(rows); });
+  def.addEventListener("change", drawPreview);
+
+  openDialog("Import items", [
+    h("p", { class: "muted", style: "margin:0", text: "Upload a spreadsheet with one row per item (or per kind of item with a Quantity column). Columns can be in any order. Identical items without a tag get numbered tags automatically, e.g. V-01, V-02." }),
+    h("div", { class: "toolbar" },
+      h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Download template (CSV)", onclick: () => downloadCsv("lending-library-items-template.csv", importTemplate()) }),
+      h("span", { class: "muted small", text: "Works with .csv, .tsv, .xlsx, .xls and .ods (first sheet)." })),
+    field("File", file), paste,
+    h("div", { class: "grid2" }, h("div", { class: "checks" }, hasHeader.el), field("PUDO point for rows without one", def)),
+    msg, mapBox, preview,
+  ], {
+    wide: true,
+    submitLabel: "Add items",
+    onSubmit: async () => {
+      const ok = parsed.filter((p) => p.item);
+      if (!ok.length) return rows.length ? "Nothing to add. Check the column choices and skipped rows." : "Choose a file or paste rows first.";
+      let done = 0;
+      const btn = dlg.querySelector("button[type=submit]");
+      try {
+        for (const p of ok) {
+          await api.add("items", { ...p.item, condition: "ok", createdAt: nowIso(), createdBy: meRef(), importedAt: nowIso() });
+          done++;
+          if (btn) btn.textContent = "Adding " + done + " of " + ok.length + "…";
+        }
+      } catch (e) {
+        return "Stopped after " + done + " of " + ok.length + ": " + errText(e) + " The first " + done + " were added; import the rest again (existing tags are skipped).";
+      }
+      toast(done + " item" + (done === 1 ? "" : "s") + " added to the inventory.");
+    },
+  });
 }
 
 function openItemForm(it) {

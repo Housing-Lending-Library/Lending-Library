@@ -228,3 +228,5 @@ tbody tr:last-child td{border-bottom:0}
 .ol-event.back{border-left-color:var(--ok)}
 .ol-time{font-size:12px;color:var(--muted)}
 .ol-title{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+tr.skip td{color:var(--late)}
+input[type=file]{padding:6px;background:var(--surface)}
