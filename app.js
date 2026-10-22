@@ -297,7 +297,7 @@ function renderShell() {
       h("div", { class: "who" },
         h("span", null, h("b", { text: meRef().name }), " · " + (isSup() ? "Supervisor" : "Student Assistant")),
         api.demo ? null : h("button", { class: "btn btn-ghost btn-sm", onclick: () => api.signOut() }, "Sign out"))),
-    api.demo ? h("div", { class: "demo" }, h("b", null, "Demo mode. "), "Made-up sample data; nothing is saved. Add the Firebase settings to config.js to switch to the real version.") : null,
+    api.demo ? h("div", { class: "demo" }, h("b", null, "Demo mode. "), "Made-up sample data; nothing is saved. Add the Firebase settings to config.js to switch to the real version.") : "",
     h("nav", { class: "tabs", role: "tablist" }, tabs.map(([k, label]) =>
       h("button", { class: "tab", role: "tab", id: "tab-" + k, "aria-selected": String(S.view === k), onclick: () => go(k) }, label, h("span", { class: "badge", id: "badge-" + k, hidden: true })))));
   mainEl = h("main", { class: "section" });
