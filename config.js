@@ -9,4 +9,8 @@ export const CONFIG = {
     appId: "1:864085865106:web:987a361e21acfc402f2c4b",
   },
   siteName: "Housing Lending Library",
+
+  // Optional parts of the site. The Experimental tab previews emails and calendar sync
+  // from the Housing mailbox, which would need university IT. Set to true to show it.
+  features: { experimental: false },
 };

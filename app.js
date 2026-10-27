@@ -286,10 +286,13 @@ let mainEl = null, views = null, raf = 0;
 function schedule() { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; refresh(); }); }
 function refresh() { if (!mainEl || !views) return; updateNavBadges(); views[S.view].update(); }
 
-const TABS = [["today", "Today"], ["calendar", "Calendar"], ["loans", "Loans"], ["items", "Inventory"], ["borrowers", "Borrowers"], ["logs", "Logs"], ["experimental", "Experimental"], ["settings", "Settings"]];
+const TABS = [["today", "Today"], ["calendar", "Calendar"], ["loans", "Loans"], ["items", "Inventory"], ["borrowers", "Borrowers"], ["logs", "Logs"], ["reports", "Reports"], ["experimental", "Experimental"], ["settings", "Settings"]];
+// The Experimental tab (Housing mailbox emails + calendar previews) is kept in the code but hidden.
+// To show it again, set features: { experimental: true } in config.js.
+const SHOW_EXPERIMENTAL = !!(CONFIG.features && CONFIG.features.experimental);
 function renderShell() {
   app.textContent = "";
-  const tabs = TABS.filter(([k]) => k !== "settings" || isSup());
+  const tabs = TABS.filter(([k]) => (k !== "settings" || isSup()) && (k !== "experimental" || SHOW_EXPERIMENTAL));
   if (!tabs.some(([k]) => k === S.view)) S.view = "today";
   app.append(
     h("div", { class: "top" },
@@ -1429,6 +1432,117 @@ function logsView() {
   };
 }
 
+// ---------------- weekly item report (items only, no student data) ----------------
+const weekStart = (t) => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); }; // Monday 00:00
+const isoWeek = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7)); const w1 = new Date(d.getFullYear(), 0, 4); return 1 + Math.round(((d - w1) / DAY - 3 + ((w1.getDay() + 6) % 7)) / 7); };
+const typeOf = (id, fallbackName) => { const it = itemById(id); return it ? it.name : norm(fallbackName).replace(/\s+[A-Z]{1,4}-\d+$/, "") || "Unknown item"; };
+const lentAt = (l) => (l.handover && l.handover.at) || (["out", "returned", "notreturned"].includes(l.status) ? l.pickupAt : null);
+
+function weekStats(a) {
+  const b = addDays(a, 7).getTime();
+  const inWeek = (iso) => iso && ts(iso) >= a && ts(iso) < b;
+  const types = {}, pudoCount = {};
+  const T = (name) => (types[name] = types[name] || { name, lent: 0, units: new Set(), hours: [], noshows: 0, late: 0, booked: 0 });
+  let lentLoans = 0, lentItems = 0, noshows = 0, returned = 0, late = 0, booked = 0;
+  for (const l of liveLoans()) {
+    const ids = l.itemIds || [];
+    const names = ids.map((id, i) => typeOf(id, (l.itemNames || [])[i]));
+    if (inWeek((l.booking && l.booking.at) || l.loggedAt)) { booked++; names.forEach((n) => T(n).booked++); }
+    const lent = lentAt(l);
+    if (inWeek(lent)) {
+      lentLoans++; lentItems += ids.length;
+      pudoCount[l.pudo] = (pudoCount[l.pudo] || 0) + ids.length;
+      const end = l.returned ? ts(l.returned.at) : l.status === "out" ? Date.now() : null;
+      ids.forEach((id, i) => { const t = T(names[i]); t.lent++; t.units.add(id); if (end) t.hours.push((end - ts(lent)) / 3600e3); });
+    }
+    if (l.status === "noshow" && inWeek(l.closedAt || l.pickupAt)) { noshows++; names.forEach((n) => T(n).noshows++); }
+    if (l.status === "returned" && l.returned && inWeek(l.returned.at)) {
+      returned++;
+      if (l.returned.lateDays > 0) { late++; names.forEach((n) => T(n).late++); }
+    }
+  }
+  const stock = {};
+  S.items.forEach((it) => { stock[it.name] = (stock[it.name] || 0) + 1; });
+  const rows = Object.values(types).map((t) => ({
+    name: t.name, lent: t.lent, units: t.units.size, stock: stock[t.name] || 0, booked: t.booked, noshows: t.noshows, late: t.late,
+    avgDays: t.hours.length ? t.hours.reduce((x, y) => x + y, 0) / t.hours.length / 24 : null,
+  })).filter((r) => r.lent || r.noshows || r.late).sort((x, y) => y.lent - x.lent || x.name.localeCompare(y.name));
+  const unused = Object.keys(stock).filter((n) => !types[n] || !types[n].lent).sort();
+  return { a, b, lentLoans, lentItems, noshows, returned, late, booked, rows, unused, pudoCount };
+}
+const weekLabel = (a) => "Week " + isoWeek(a) + " · " + fmtDay(new Date(a).toISOString()) + " – " + fmtDay(addDays(a, 6).toISOString());
+const days1 = (n) => (n === null ? "—" : n < 1 ? Math.round(n * 24) + " h" : (Math.round(n * 10) / 10) + " d");
+
+function reportsView() {
+  let box;
+  return {
+    mount(root) {
+      if (!S.repWeek) S.repWeek = weekStart(Date.now());
+      box = h("div", { class: "section" });
+      const nav = (d) => () => { S.repWeek = addDays(S.repWeek, 7 * d).getTime(); this.update(); };
+      root.append(
+        h("div", { class: "toolbar", style: "justify-content:space-between" }, h("h2", { text: "Weekly report" }),
+          h("div", { class: "toolbar" },
+            h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: nav(-1), "aria-label": "Previous week", text: "←" }),
+            h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "This week", onclick: () => { S.repWeek = weekStart(Date.now()); this.update(); } }),
+            h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: nav(1), "aria-label": "Next week", text: "→" }))),
+        h("p", { class: "muted small", style: "margin:0;max-width:70ch", text: "Which items were lent out and how often. Counts only, no student information. A loan counts in the week it was handed over." }),
+        box);
+    },
+    update() {
+      box.textContent = "";
+      if (!S.loaded.loans || !S.loaded.items) { box.append(loading()); return; }
+      const w = weekStats(S.repWeek);
+      const current = S.repWeek === weekStart(Date.now());
+      box.append(h("div", { class: "toolbar", style: "justify-content:space-between" },
+        h("h3", null, weekLabel(w.a), current ? h("span", { class: "pill booked", style: "margin-left:8px", text: "So far" }) : null),
+        h("div", { class: "toolbar" },
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Download week (CSV)", onclick: () => downloadCsv("lending-library-week-" + isoWeek(w.a) + "-" + new Date(w.a).getFullYear() + ".csv", weekCsv(w)) }),
+          h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Last 12 weeks (CSV)", onclick: () => downloadCsv("lending-library-12-weeks.csv", trendCsv(12)) }))));
+      box.append(h("div", { class: "summary" },
+        h("div", { class: "stat" }, h("div", { class: "v", text: String(w.lentItems) }), h("div", { class: "label", text: "Items lent out" })),
+        h("div", { class: "stat" }, h("div", { class: "v", text: String(w.lentLoans) }), h("div", { class: "label", text: "Loans" + (w.booked ? " (" + w.booked + " new reservations)" : "") })),
+        h("div", { class: "stat" }, h("div", { class: "v", text: String(w.returned) }), h("div", { class: "label", text: "Returned" + (w.late ? " (" + w.late + " late)" : "") })),
+        h("div", { class: "stat" }, h("div", { class: "v", text: String(w.noshows) }), h("div", { class: "label", text: "No-shows" }))));
+
+      // 8-week trend
+      const weeks = Array.from({ length: 8 }, (_, i) => addDays(S.repWeek, -7 * (7 - i)).getTime()).map((a) => ({ a, n: weekStats(a).lentItems }));
+      const max = Math.max(1, ...weeks.map((x) => x.n));
+      box.append(h("section", { class: "panel", style: "padding:14px;display:grid;gap:8px" },
+        h("span", { class: "label", text: "Items lent out per week" }),
+        h("div", { class: "trend" }, weeks.map((x) => h("button", {
+          class: "trend-col" + (x.a === S.repWeek ? " sel" : ""), type: "button", title: weekLabel(x.a) + ": " + x.n + " items",
+          onclick: () => { S.repWeek = x.a; this.update(); },
+        }, h("span", { class: "trend-n", text: String(x.n) }), h("span", { class: "trend-bar", style: "height:" + Math.round((x.n / max) * 100) + "%" }), h("span", { class: "trend-w", text: "W" + isoWeek(x.a) }))))));
+
+      if (!w.rows.length) box.append(empty("Nothing lent out this week", current ? "Items handed over this week will show up here." : "No items were handed over in this week."));
+      else box.append(h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, ["Item", "Times lent out", "Units used", "In stock", "Avg. time out", "Reserved", "No-shows", "Late returns"].map((c) => h("th", { text: c })))),
+        h("tbody", null, w.rows.map((r) => h("tr", null, [r.name, r.lent, r.units, r.stock, days1(r.avgDays), r.booked, r.noshows || "", r.late || ""].map((c) => h("td", { text: String(c) }))))))));
+
+      const pudoRows = Object.entries(w.pudoCount).sort((x, y) => y[1] - x[1]);
+      if (pudoRows.length) box.append(h("p", { class: "muted small", style: "margin:0", text: "By PUDO point: " + pudoRows.map(([p, n]) => pudoShort(p) + " " + n).join(" · ") }));
+      if (w.unused.length) box.append(h("p", { class: "muted small", style: "margin:0", text: "Not lent out this week: " + w.unused.join(", ") }));
+    },
+  };
+}
+function weekCsv(w) {
+  return [["Week", "From", "To", "Item", "Times lent out", "Units used", "In stock", "Avg. days out", "Reserved", "No-shows", "Late returns"],
+    ...w.rows.map((r) => [isoWeek(w.a), fmtDate(new Date(w.a).toISOString()), fmtDate(addDays(w.a, 6).toISOString()), r.name, r.lent, r.units, r.stock, r.avgDays === null ? "" : Math.round(r.avgDays * 10) / 10, r.booked, r.noshows, r.late])];
+}
+function trendCsv(n) {
+  const names = [...new Set(S.items.map((i) => i.name))].sort();
+  const weeks = Array.from({ length: n }, (_, i) => addDays(weekStart(Date.now()), -7 * (n - 1 - i)).getTime());
+  const rows = weeks.map((a) => {
+    const w = weekStats(a), by = {};
+    w.rows.forEach((r) => { by[r.name] = r.lent; });
+    w.rows.forEach((r) => { if (!names.includes(r.name)) names.push(r.name); });
+    return { a, w, by };
+  });
+  return [["Week", "From", "Items lent out", "Loans", "No-shows", ...names],
+    ...rows.map(({ a, w, by }) => [isoWeek(a), fmtDate(new Date(a).toISOString()), w.lentItems, w.lentLoans, w.noshows, ...names.map((nm) => by[nm] || 0)])];
+}
+
 function settingsView() {
   let staffBox, syncBox;
   return {
@@ -1657,7 +1771,7 @@ let unsubs = [], meUnsub = null, started = false;
 function stopAll() { unsubs.forEach((u) => { try { u(); } catch (e) {} }); unsubs = []; if (meUnsub) { try { meUnsub(); } catch (e) {} meUnsub = null; } started = false; views = null; mainEl = null; }
 
 function startData() {
-  views = { today: todayView(), calendar: calendarView(), loans: loansView(), items: itemsView(), borrowers: borrowersView(), logs: logsView(), experimental: experimentalView(), settings: settingsView() };
+  views = { today: todayView(), calendar: calendarView(), loans: loansView(), items: itemsView(), borrowers: borrowersView(), logs: logsView(), reports: reportsView(), experimental: experimentalView(), settings: settingsView() };
   const fail = (what) => (err) => { console.error(what, err); toast("Couldn't load " + what + ": " + errText(err), true); };
   let firstSettings = true;
   unsubs.push(api.watch("staff", (d) => { S.staff = d; schedule(); }, fail("staff")));

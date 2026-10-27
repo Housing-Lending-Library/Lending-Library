@@ -129,6 +129,7 @@ The reminder script needs permission to read the database. That permission comes
 6. Pick **`installTriggers`** → **Run**. From now on:
    - every 5 minutes: reminders about 30 and 15 minutes before each pickup and return, a follow-up 30 minutes after any pickup or return that still isn't logged on the site, plus any escalations or suspensions;
    - around 7:00: the morning summary;
+   - Mondays around 8:00: the weekly item report for the previous week (items only, no student data);
    - around 2:00: old closed loans are deleted (after the months set in Settings).
 7. **Share** (top right) → add the co-owner as **Editor**.
 

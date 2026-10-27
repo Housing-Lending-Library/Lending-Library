@@ -8,6 +8,8 @@
  *                      - a follow-up 30 minutes after a pickup or return that nobody has logged yet;
  *                      - sends queued messages for the Housing Team (escalations, suspensions).
  *   morningSummary() every day around 7:00: what's late, today and tomorrow.
+ *   weeklyReport()   every Monday around 8:00: which items were lent out last week and how often
+ *                    (counts only, no student data).
  *   cleanup()        every night: deletes closed loans older than the retention period.
  *
  * Setup (see SETUP.md, steps 5–6): paste this file and appsscript.json into a new Apps Script project,
@@ -30,7 +32,8 @@ function installTriggers() {
   ScriptApp.newTrigger('tick').timeBased().everyMinutes(5).create();
   ScriptApp.newTrigger('morningSummary').timeBased().everyDays(1).atHour(7).inTimezone(TZ).create();
   ScriptApp.newTrigger('cleanup').timeBased().everyDays(1).atHour(2).inTimezone(TZ).create();
-  Logger.log('Triggers installed: tick every 5 min, morningSummary ~07:00, cleanup ~02:00.');
+  ScriptApp.newTrigger('weeklyReport').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).inTimezone(TZ).create();
+  Logger.log('Triggers installed: tick every 5 min, morningSummary ~07:00, weeklyReport Mondays ~08:00, cleanup ~02:00.');
 }
 
 function tick() {
@@ -151,6 +154,47 @@ function morningSummary() {
   const subject = '[Lending Library] ' + (late.length ? late.length + ' need action, ' : '') + today.length + ' today';
   if (settings.notifyEmail) sendEmail_(settings.notifyEmail, subject, lines.join('\n'));
   if (settings.teamsReminders !== false) postTeams_(subject.replace('[Lending Library] ', 'Morning summary: '), lines.slice(1));
+}
+
+// ---------- weekly item report (items only) ----------
+
+function weeklyReport() {
+  const settings = getSettings_();
+  if (!settings.notifyEmail && !PropertiesService.getScriptProperties().getProperty('TEAMS_WEBHOOK_URL')) return;
+  const thisMonday = startOfDay_(new Date());
+  while (Utilities.formatDate(thisMonday, TZ, 'u') !== '1') thisMonday.setTime(thisMonday.getTime() - 864e5);
+  const from = new Date(thisMonday.getTime() - 7 * 864e5), to = thisMonday; // last week, Monday to Sunday
+  const inWeek = function (iso) { if (!iso) return false; const t = new Date(iso); return t >= from && t < to; };
+  const items = {}; const stock = {};
+  listAll_('items').forEach(function (d) { items[d.id] = d.data.name; stock[d.data.name] = (stock[d.data.name] || 0) + 1; });
+  const typeOf = function (id, fallback) { return items[id] || String(fallback || 'Unknown item').replace(/\s+[A-Z]{1,4}-\d+$/, ''); };
+  const types = {}; let lentItems = 0, loans = 0, noshows = 0, late = 0;
+  const T = function (n) { return (types[n] = types[n] || { lent: 0, noshows: 0, late: 0 }); };
+  listAll_('loans').forEach(function (d) {
+    const l = d.data; if (l.deleted === true) return;
+    const ids = l.itemIds || [];
+    const names = ids.map(function (id, i) { return typeOf(id, (l.itemNames || [])[i]); });
+    const lent = (l.handover && l.handover.at) || (['out', 'returned', 'notreturned'].indexOf(l.status) !== -1 ? l.pickupAt : null);
+    if (inWeek(lent)) { loans++; lentItems += ids.length; names.forEach(function (n) { T(n).lent++; }); }
+    if (l.status === 'noshow' && inWeek(l.closedAt || l.pickupAt)) { noshows++; names.forEach(function (n) { T(n).noshows++; }); }
+    if (l.status === 'returned' && l.returned && inWeek(l.returned.at) && l.returned.lateDays > 0) { late++; names.forEach(function (n) { T(n).late++; }); }
+  });
+  const rows = Object.keys(types).sort(function (a, b) { return types[b].lent - types[a].lent || a.localeCompare(b); });
+  const unused = Object.keys(stock).filter(function (n) { return !types[n] || !types[n].lent; }).sort();
+  const label = 'week of ' + Utilities.formatDate(from, TZ, 'd MMM') + ' – ' + Utilities.formatDate(new Date(to.getTime() - 864e5), TZ, 'd MMM yyyy');
+  const lines = [
+    'Lending Library, ' + label + ':',
+    '',
+    lentItems + ' item(s) lent out in ' + loans + ' loan(s), ' + noshows + ' no-show(s), ' + late + ' late return(s).',
+    '',
+  ].concat(rows.length ? ['By item:'].concat(rows.map(function (n) {
+    const t = types[n];
+    return '  ' + n + ': lent out ' + t.lent + 'x' + (stock[n] ? ' (' + stock[n] + ' in stock)' : '') + (t.noshows ? ', ' + t.noshows + ' no-show(s)' : '') + (t.late ? ', ' + t.late + ' late' : '');
+  })) : ['Nothing was lent out.']).concat(unused.length ? ['', 'Not lent out: ' + unused.join(', ')] : [])
+    .concat(['', 'More detail and CSV downloads: Reports tab on the site.']);
+  const subject = '[Lending Library] Weekly report: ' + lentItems + ' item(s) lent out, ' + label;
+  if (settings.notifyEmail) sendEmail_(settings.notifyEmail, subject, lines.join('\n'));
+  if (settings.teamsReminders !== false) postTeams_('Weekly report: ' + label, lines.slice(2));
 }
 
 // ---------- cleanup (data retention) ----------
