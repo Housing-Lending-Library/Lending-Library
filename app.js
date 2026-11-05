@@ -95,14 +95,14 @@ const pudoShort = (id) => { const p = pudoById(id); return p ? p.room : id || "�
 const itemLabel = (it) => it.name + (it.tag ? " " + it.tag : "");
 
 // ---------------- rules ----------------
-const isOpen = (l) => l.status === "booked" || l.status === "out";
+const isOpen = (l) => l.status === "requested" || l.status === "booked" || l.status === "out";
 function loanState(l) {
   const now = Date.now();
   if (l.status === "booked") return now > ts(l.pickupAt) + S.settings.noShowWaitMinutes * MIN ? "missed" : "booked";
   if (l.status === "out") return now > ts(l.returnAt) ? "overdue" : "out";
   return l.status;
 }
-const LOAN_LABEL = { booked: "Booked", missed: "Didn't show up?", out: "Out", overdue: "Overdue", returned: "Returned", noshow: "No-show", cancelled: "Cancelled", notreturned: "Not returned" };
+const LOAN_LABEL = { requested: "Request", booked: "Booked", missed: "Didn't show up?", out: "Out", overdue: "Overdue", returned: "Returned", noshow: "No-show", cancelled: "Cancelled", notreturned: "Not returned" };
 
 function itemState(it) {
   if (it.condition === "broken" || it.condition === "missing") return { kind: it.condition };
@@ -255,19 +255,23 @@ function sampleData() {
     "30000104": { name: "Example Student D", matric: "30000104", contract, noShows: [{ at: at(-40, 9), by: sa }, { at: at(-20, 9), by: sa }, { at: at(-5, 9), by: sa }], violations: [],
       suspensions: [{ type: "suspension", from: at(-5, 9, 20), until: at(85, 9, 20), reason: "3 no-shows (Rule 17)", auto: true, by: sa }] },
     "30000105": { name: "Example Student E", matric: "30000105", contract, noShows: [], violations: [], suspensions: [] },
+    "30000106": { name: "Example Student F", matric: "30000106", contract, noShows: [], violations: [], suspensions: [] },
+    "30000107": { name: "Example Student G", matric: "30000107", noShows: [], violations: [], suspensions: [] },
   };
-  const L = (o) => ({ deleted: false, notes: "", booking: { by: sa, at: at(-3, 12), checks: { contract: true, card: true, residence: true } }, erez: { reservation: true }, contacts: [], remind: {}, ...o });
+  const L = (o) => ({ deleted: false, notes: "", booking: { by: sa, at: at(-3, 12), checks: { contract: true, card: true, residence: true } }, contacts: [], remind: {}, ...o });
   const loans = {
     a1: L({ matric: "30000101", borrowerName: "Example Student A", itemIds: ["i1", "i2"], itemNames: ["Iron I-01", "Iron I-02"], pudo: "TSO", pickupAt: at(-4, 16), returnAt: at(-2, 16), status: "out",
-      handover: { at: at(-4, 16, 5), by: sa, checks: { card: true, briefed: true } }, erez: { reservation: true, loan: true },
+      handover: { at: at(-4, 16, 5), by: sa, checks: { card: true, briefed: true } },
       contacts: [{ at: at(-1, 10), by: sa, method: "Email", note: "No reply" }] }),
     a2: L({ matric: "30000103", borrowerName: "Example Student C", itemIds: ["v1"], itemNames: ["Vacuum V-01"], pudo: "TSO", pickupAt: at(0, Math.max(hr - 1, 0)), returnAt: at(2, Math.max(hr - 1, 0)), status: "booked" }),
-    a3: L({ matric: "30000105", borrowerName: "Example Student E", itemIds: ["v2", "m1"], itemNames: ["Vacuum V-02", "Mop and bucket M-01"], pudo: "TSO", pickupAt: at(0, 23, 30), returnAt: at(2, 23, 30), status: "booked", erez: {}, notes: "Also asked for floor cleaning solution" }),
+    a3: L({ matric: "30000105", borrowerName: "Example Student E", itemIds: ["v2", "m1"], itemNames: ["Vacuum V-02", "Mop and bucket M-01"], pudo: "TSO", pickupAt: at(0, 23, 30), returnAt: at(2, 23, 30), status: "booked", notes: "Also asked for floor cleaning solution" }),
     a4: L({ matric: "30000102", borrowerName: "Example Student B", itemIds: ["p1"], itemNames: ["Pool set (2 sticks, balls, holder) P-01"], pudo: "NC-215", pickupAt: at(-1, 15), returnAt: at(1, 15), status: "out",
-      handover: { at: at(-1, 15, 2), by: sup, checks: { card: true, briefed: true }, conditionNote: "All 16 balls present" }, erez: { reservation: true, loan: true } }),
+      handover: { at: at(-1, 15, 2), by: sup, checks: { card: true, briefed: true }, conditionNote: "All 16 balls present" } }),
     a5: L({ matric: "30000103", borrowerName: "Example Student C", itemIds: ["k1"], itemNames: ["Baking kit K-01"], pudo: "MD-101", pickupAt: at(3, 14), returnAt: at(5, 14), status: "booked" }),
+    r1: L({ matric: "30000102", borrowerName: "Example Student B", itemIds: ["v4"], itemNames: ["Vacuum V-04"], pudo: "XD-244", pickupAt: at(1, 15), returnAt: at(3, 15), status: "requested", notes: "Can I also get the small nozzle?",
+      request: { at: at(0, 9), by: { email: "student:30000102", name: "Example Student B (student)" } }, booking: { at: at(0, 9), by: { email: "student:30000102", name: "Example Student B (student)" }, checks: { contract: true } } }),
     a6: L({ matric: "30000101", borrowerName: "Example Student A", itemIds: ["v1"], itemNames: ["Vacuum V-01"], pudo: "TSO", pickupAt: at(-9, 10), returnAt: at(-7, 10), status: "returned",
-      returned: { at: at(-7, 9, 50), by: sup, issues: [], lateDays: 0, fee: 0 }, erez: { reservation: true, loan: true, return: true } }),
+      returned: { at: at(-7, 9, 50), by: sup, issues: [], lateDays: 0, fee: 0 } }),
   };
   return {
     staff: {
@@ -292,6 +296,7 @@ const TABS = [["today", "Today"], ["calendar", "Calendar"], ["loans", "Loans"], 
 const SHOW_EXPERIMENTAL = !!(CONFIG.features && CONFIG.features.experimental);
 function renderShell() {
   app.textContent = "";
+  if (S.studentPreview) { renderStudentShell(); return; }
   const tabs = TABS.filter(([k]) => (k !== "settings" || isSup()) && (k !== "experimental" || SHOW_EXPERIMENTAL));
   if (!tabs.some(([k]) => k === S.view)) S.view = "today";
   app.append(
@@ -299,6 +304,7 @@ function renderShell() {
       h("h1", null, "Lending ", h("span", { text: "Library" })),
       h("div", { class: "who" },
         h("span", null, h("b", { text: meRef().name }), " · " + (isSup() ? "Supervisor" : "Student Assistant")),
+        h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: openStudentPicker, text: "Student view" }),
         api.demo ? null : h("button", { class: "btn btn-ghost btn-sm", onclick: () => api.signOut() }, "Sign out"))),
     api.demo ? h("div", { class: "demo" }, h("b", null, "Demo mode. "), "Made-up sample data; nothing is saved. Add the Firebase settings to config.js to switch to the real version.") : "",
     h("nav", { class: "tabs", role: "tablist" }, tabs.map(([k, label]) =>
@@ -319,7 +325,7 @@ function go(view) {
 function needsAction() { return liveLoans().filter((l) => ["missed", "overdue"].includes(loanState(l))); }
 function updateNavBadges() {
   const set = (id, n, hot) => { const b = document.getElementById("badge-" + id); if (b) { b.hidden = !n; b.textContent = String(n); b.className = "badge" + (hot ? " hot" : ""); } };
-  set("today", needsAction().length, true);
+  set("today", needsAction().length + liveLoans().filter((l) => l.status === "requested").length, true);
   set("loans", liveLoans().filter(isOpen).length, false);
 }
 
@@ -406,7 +412,6 @@ function openHandover(l) {
   const b = borrowerOf(l.matric), st = borrowerState(b);
   const card = check("h-card", "Campus card shown and identity matches", false);
   const briefed = check("h-brief", "Borrower briefed (see list)", false);
-  const erez = check("h-erez", "Loan logged in eRezLife", !!(l.erez && l.erez.loan));
   const cond = h("textarea", { id: "h-cond", rows: 2, placeholder: "e.g. small scratch on handle, all parts present. Photos go where you keep them now." });
   const blocked = st.kind === "suspended" || st.kind === "banned";
   openDialog("Hand over", [
@@ -420,7 +425,7 @@ function openHandover(l) {
       h("li", { text: "They're responsible for damage while it's with them." }),
       h("li", { text: "One extension of up to " + S.settings.extensionDays + " days can be asked for before the due date, only if nobody else booked it." }),
       h("li", { text: "Late returns cost €" + S.settings.lateFeePerDay + " per day, up to the item's value. Unpaid charges come from the deposit; disputes in writing to Housing within 7 days." }))),
-    h("div", { class: "checks" }, briefed.el, erez.el),
+    h("div", { class: "checks" }, briefed.el),
   ], {
     submitLabel: "Hand over",
     onSubmit: async () => {
@@ -430,9 +435,8 @@ function openHandover(l) {
       await api.update("loans", l.id, {
         status: "out",
         handover: { at: nowIso(), by: meRef(), checks: { card: true, briefed: true }, conditionNote: norm(cond.value) },
-        erez: { ...(l.erez || {}), loan: erez.input.checked },
       });
-      toast("Handed over." + (erez.input.checked ? "" : " Remember to log the loan in eRezLife."));
+      toast("Handed over.");
     },
   });
 }
@@ -465,7 +469,6 @@ async function noShow(l) {
 function openReturn(l) {
   const when = h("input", { id: "r-when", type: "datetime-local", value: toInput(new Date()) });
   const clean = check("r-clean", "Clean", true), complete = check("r-complete", "Complete (all parts)", true), undamaged = check("r-ok", "Not damaged", true);
-  const erez = check("r-erez", "Return logged in eRezLife", !!(l.erez && l.erez.return));
   const conds = (l.itemIds || []).map((id) => { const it = itemById(id); return { id, it, sel: conditionSelect("r-cond-" + id, it ? it.condition : "ok") }; });
   const note = h("textarea", { id: "r-note", rows: 2, placeholder: "What's wrong, if anything" });
   const lateBox = h("div");
@@ -487,7 +490,7 @@ function openReturn(l) {
     h("span", { class: "label", text: "Compare with the condition at pickup" }),
     h("div", { class: "checks" }, clean.el, complete.el, undamaged.el),
     conds.length ? h("fieldset", null, h("legend", { class: "label", text: "Item condition now (updates the inventory)" }), conds.map((c) => field(c.it ? itemLabel(c.it) : c.id, c.sel))) : null,
-    field("Note", note), h("div", { class: "checks" }, erez.el),
+    field("Note", note),
   ], {
     submitLabel: "Log return",
     onSubmit: async () => {
@@ -500,7 +503,6 @@ function openReturn(l) {
       await api.update("loans", l.id, {
         status: "returned", closedAt: at,
         returned: { at, by: meRef(), issues, note: norm(note.value), lateDays: li.days, fee: li.fee, feeCapped: li.capped, escalated: !!(issues.length || li.days) },
-        erez: { ...(l.erez || {}), return: erez.input.checked },
       });
       for (const c of conds) {
         if (c.it && c.sel.value !== (c.it.condition || "ok")) await api.update("items", c.id, { condition: c.sel.value, conditionNote: c.sel.value === "ok" ? "" : "On return: " + (norm(note.value) || "no details") });
@@ -557,7 +559,7 @@ function openCancel(l) {
     onSubmit: async () => {
       if (!norm(reason.value)) return "Give a short reason.";
       await api.update("loans", l.id, { status: "cancelled", cancelReason: norm(reason.value), closedAt: nowIso(), closedBy: meRef() });
-      toast("Reservation cancelled. Update eRezLife too.");
+      toast("Reservation cancelled.");
     },
   });
 }
@@ -622,9 +624,6 @@ async function closeNotReturned(l) {
   for (const id of l.itemIds || []) if (itemById(id)) await api.update("items", id, { condition: "missing", conditionNote: "Not returned by " + l.borrowerName });
   toast("Closed as not returned. Items marked missing.");
 }
-async function toggleErez(l, key) {
-  await api.update("loans", l.id, { erez: { ...(l.erez || {}), [key]: !(l.erez && l.erez[key]) } });
-}
 
 // ---------------- booking ----------------
 function openLoanForm(existing, preset = {}) {
@@ -636,7 +635,6 @@ function openLoanForm(existing, preset = {}) {
   const cContract = check("f-contract", "Signed Contract Amendment is on file", false);
   const cCard = check("f-card", "Campus card shown", !!l);
   const cRes = check("f-res", "Lives on campus (active, current residence)", !!l);
-  const cErez = check("f-erez", "Reservation logged in eRezLife", !!(l && l.erez && l.erez.reservation));
   const pudo = pudoSelect("f-pudo", l ? l.pudo : preset.pudo || (pudos().find((p) => p.active) || {}).id);
   const outAt = h("input", { id: "f-out", type: "datetime-local", value: toInput(l ? new Date(l.pickupAt) : tomorrow) });
   const backAt = h("input", { id: "f-back", type: "datetime-local", value: toInput(l ? new Date(l.returnAt) : addDays(tomorrow, S.settings.loanDays)) });
@@ -713,7 +711,6 @@ function openLoanForm(existing, preset = {}) {
     timeNote, reasonWrap,
     h("div", { class: "field" }, h("span", { class: "label-text", text: "Items at this PUDO point" }), pick),
     field("Notes (optional)", notes),
-    h("div", { class: "checks" }, cErez.el),
   ], {
     wide: true,
     submitLabel: l ? "Save changes" : "Reserve",
@@ -753,7 +750,6 @@ function openLoanForm(existing, preset = {}) {
       const body = {
         matric: m, borrowerName: nm, pudo: pudo.value, itemIds: ids, itemNames: ids.map((id) => itemLabel(itemById(id))),
         pickupAt: a.toISOString(), returnAt: bk.toISOString(), notes: norm(notes.value),
-        erez: { ...((l && l.erez) || {}), reservation: cErez.input.checked },
       };
       if (exception) body.advanceException = exception;
       const bUpdate = { matric: m, name: nm };
@@ -765,24 +761,13 @@ function openLoanForm(existing, preset = {}) {
         toast("Reservation updated.");
       } else {
         await api.add("loans", { ...body, status: "booked", deleted: false, booking: { at: nowIso(), by: meRef(), checks: { contract: true, card: true, residence: true } }, contacts: [], remind: {} });
-        toast("Reserved. Reminders go out 30 and 15 minutes before pickup and return." + (cErez.input.checked ? "" : " Remember to log it in eRezLife."));
+        toast("Reserved. Reminders go out 30 and 15 minutes before pickup and return.");
       }
     },
   });
 }
 
 // ---------------- shared bits ----------------
-function erezChips(l) {
-  const wrap = h("div", { class: "erez" }, h("span", { class: "muted small", text: "eRezLife:" }));
-  const keys = [["reservation", "reservation"], ["loan", "loan"], ["return", "return"]];
-  const needed = l.status === "booked" ? 1 : l.status === "out" ? 2 : l.status === "returned" ? 3 : 1;
-  keys.slice(0, needed).forEach(([k, label]) => {
-    const on = !!(l.erez && l.erez[k]);
-    wrap.append(h("button", { class: "erez-chip" + (on ? " on" : ""), type: "button", "aria-pressed": String(on), title: on ? "Logged in eRezLife. Click to undo." : "Click once it's logged in eRezLife", onclick: () => toggleErez(l, k).catch((e) => toast(errText(e), true)) }, (on ? "✓ " : "") + label));
-  });
-  return wrap;
-}
-
 function loanCard(l) {
   const st = loanState(l), closed = !isOpen(l);
   const card = h("article", { class: "loan is-" + st + (closed ? " is-closed" : "") });
@@ -809,9 +794,14 @@ function loanCard(l) {
   if (l.status === "cancelled") meta.push("Cancelled: " + (l.cancelReason || ""));
   if (l.status === "noshow") meta.push("No-show logged" + (l.closedBy ? " by " + l.closedBy.name : ""));
   if ((l.contacts || []).length) meta.push("Contact attempts: " + l.contacts.map((c) => fmtDay(c.at) + " " + fmtTime(c.at) + " (" + c.method + (c.by ? ", by " + c.by.name : "") + ")").join(", "));
-  meta.push("Reserved by " + ((l.booking && l.booking.by && l.booking.by.name) || "unknown") + (l.booking ? " on " + fmtDay(l.booking.at) : ""));
-  card.append(h("div", { class: "loan-meta" }, meta.map((t) => h("span", { text: t })), erezChips(l)));
+  meta.push((l.request ? "Requested by " : "Reserved by ") + ((l.booking && l.booking.by && l.booking.by.name) || "unknown") + (l.booking ? " on " + fmtDay(l.booking.at) : "") + (l.confirmed ? " · confirmed by " + l.confirmed.by.name : ""));
+  card.append(h("div", { class: "loan-meta" }, meta.map((t) => h("span", { text: t }))));
   const foot = h("div", { class: "loan-foot" });
+  if (l.status === "requested") {
+    foot.append(h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => openConfirmRequest(l), text: "Confirm" }));
+    foot.append(h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => openDeclineRequest(l), text: "Decline" }));
+    foot.append(h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => openLoanForm(l), text: "Edit" }));
+  }
   if (l.status === "booked") {
     foot.append(h("button", { class: "btn btn-primary btn-sm", type: "button", onclick: () => openHandover(l), text: "Hand over" }));
     if (st === "missed") foot.append(armedButton("noshow:" + l.id, "No-show", "Confirm no-show", () => noShow(l)));
@@ -839,7 +829,7 @@ const loading = () => empty("Loading…", "Fetching the latest data.");
 function eventsBetween(a, b) {
   const evs = [];
   for (const l of liveLoans()) {
-    if (!isOpen(l)) continue;
+    if (!isOpen(l) || l.status === "requested") continue;
     if (l.status === "booked") evs.push({ kind: "out", at: l.pickupAt, l });
     evs.push({ kind: "back", at: l.returnAt, l });
   }
@@ -893,23 +883,17 @@ function todayView() {
       const today = eventsBetween(Date.now() - S.settings.noShowWaitMinutes * MIN, t1).filter((e) => !(e.l.status === "booked" && loanState(e.l) === "missed" && e.kind === "out") && !(e.kind === "back" && loanState(e.l) === "overdue"));
       const tomorrow = eventsBetween(t1, t2), week = eventsBetween(t2, t8);
       const open = liveLoans().filter(isOpen);
-      const missingErez = liveLoans().filter((l) => {
-        const e = l.erez || {};
-        return (isOpen(l) && !e.reservation) || (l.status === "out" && !e.loan) || (l.status === "returned" && !e.return && Date.now() - ts(l.closedAt) < 7 * DAY);
-      });
       box.append(h("div", { class: "summary" },
         h("div", { class: "stat" + (needs.length ? " hot" : "") }, h("div", { class: "v", text: String(needs.length) }), h("div", { class: "label", text: "Needs action" })),
         h("div", { class: "stat" }, h("div", { class: "v", text: String(today.length) }), h("div", { class: "label", text: "Still today" })),
         h("div", { class: "stat" }, h("div", { class: "v", text: String(open.filter((l) => l.status === "out").length) }), h("div", { class: "label", text: "Out now" })),
-        h("div", { class: "stat" + (missingErez.length ? " warnish" : "") }, h("div", { class: "v", text: String(missingErez.length) }), h("div", { class: "label", text: "Not in eRezLife" }))));
+        h("div", { class: "stat" }, h("div", { class: "v", text: String(open.filter((l) => l.status === "booked").length) }), h("div", { class: "label", text: "Booked" }))));
+      const reqs = liveLoans().filter((l) => l.status === "requested").sort((a, b) => ts(a.pickupAt) - ts(b.pickupAt));
+      if (reqs.length) box.append(h("section", { class: "section" }, h("div", { class: "section-head" }, h("h2", { text: "Requests to confirm" }), h("span", { class: "count", text: String(reqs.length) })), h("div", { class: "list" }, reqs.map(loanCard))));
       if (needs.length) box.append(block("Needs action", needs, (l) => evRow({ kind: "late", l }), ""));
       box.append(block("Still today", today, (e) => evRow(e, false), "Nothing else scheduled today."));
       box.append(block("Tomorrow", tomorrow, (e) => evRow(e, false), "Nothing scheduled tomorrow."));
       box.append(block("Next 7 days", week, (e) => evRow(e, true), "Nothing else this week."));
-      if (missingErez.length) box.append(h("section", { class: "section" },
-        h("div", { class: "section-head" }, h("h2", { text: "Not yet in eRezLife" }), h("span", { class: "count", text: String(missingErez.length) })),
-        h("p", { class: "muted small", style: "margin:0", text: "Tick each step once it's logged in eRezLife, so it's updated the same day." }),
-        h("div", { class: "list" }, missingErez.map(loanCard))));
     },
   };
 }
@@ -967,7 +951,7 @@ function calendarView() {
 
 function loansView() {
   let box, chips;
-  const FILTERS = [["active", "Active"], ["needs", "Needs action"], ["closed", "Closed"], ["all", "All"]];
+  const FILTERS = [["active", "Active"], ["requests", "Requests"], ["needs", "Needs action"], ["closed", "Closed"], ["all", "All"]];
   return {
     mount(root) {
       chips = h("div", { class: "chips" });
@@ -979,7 +963,7 @@ function loansView() {
     },
     update() {
       const all = liveLoans();
-      const groups = { active: all.filter(isOpen), needs: needsAction(), closed: all.filter((l) => !isOpen(l)), all };
+      const groups = { requests: all.filter((l) => l.status === "requested"), active: all.filter(isOpen), needs: needsAction(), closed: all.filter((l) => !isOpen(l)), all };
       chips.textContent = "";
       FILTERS.forEach(([k, label]) => chips.append(h("button", { class: "chip", type: "button", "aria-pressed": String(S.loanFilter === k), onclick: () => { S.loanFilter = k; this.update(); } }, label, h("span", { class: "n", text: String(groups[k].length) }))));
       box.textContent = "";
@@ -1769,6 +1753,266 @@ function experimentalView() {
   };
 }
 
+// ---------------- student view ----------------
+// What students will see once they have accounts: borrow (request items), my loans, my status.
+// Students only ever see their own record and item availability, never other students.
+// Until student accounts exist, staff can open it as a preview for any student ("Student view" in the header).
+const STUDENT_TABS = [["s-borrow", "Borrow"], ["s-loans", "My loans"], ["s-status", "My status"]];
+const STUDENT_LABEL = { requested: "Waiting for confirmation", booked: "Confirmed", missed: "Pickup missed", out: "Borrowed", overdue: "Overdue, please return", returned: "Returned", noshow: "No-show", cancelled: "Cancelled", notreturned: "Not returned" };
+let staffViews = null;
+const meStudent = () => borrowerOf(S.studentPreview);
+const studentRef = () => { const b = meStudent(); return { email: "student:" + S.studentPreview, name: ((b && b.name) || S.studentPreview) + " (student)" }; };
+
+function openStudentPicker() {
+  const q = h("input", { id: "sp-q", type: "search", placeholder: "Name or matriculation number" });
+  const list = h("div", { class: "panel rows", style: "max-height:320px;overflow:auto" });
+  const draw = () => {
+    list.textContent = "";
+    const t = lc(q.value);
+    const found = S.borrowers.filter((b) => !t || lc(b.name).includes(t) || b.id.includes(t)).sort((x, y) => lc(x.name).localeCompare(lc(y.name))).slice(0, 50);
+    if (!found.length) { list.append(h("p", { class: "muted small", style: "margin:0;padding:12px", text: S.borrowers.length ? "No student matches." : "No students yet. Add one on the Borrowers tab first." })); return; }
+    found.forEach((b) => list.append(h("button", { class: "pick-row", type: "button", onclick: () => { dlg.close(); enterStudentPreview(b.id); } },
+      h("span", { text: b.name || "(no name)" }), h("span", { class: "mono muted", text: b.id }), borrowerPill(borrowerState(b)))));
+  };
+  q.addEventListener("input", draw); draw();
+  openDialog("Student view (preview)", [
+    h("p", { class: "muted", style: "margin:0", text: "See the site the way a student would: request items, check their loans and their own status. Pick a student to preview it with their record. Anything you request here is real (it creates a request that staff confirm)." }),
+    q, list]);
+}
+function enterStudentPreview(matric) {
+  S.studentPreview = matric; S.staffView = S.view; S.view = "s-borrow";
+  views = { "s-borrow": studentBorrowView(), "s-loans": studentLoansView(), "s-status": studentStatusView() };
+  renderShell();
+}
+function exitStudentPreview() {
+  S.studentPreview = null; S.view = S.staffView || "today"; views = staffViews;
+  renderShell();
+}
+function renderStudentShell() {
+  const b = meStudent();
+  if (!STUDENT_TABS.some(([k]) => k === S.view)) S.view = "s-borrow";
+  app.append(
+    h("div", { class: "top" },
+      h("h1", null, "Lending ", h("span", { text: "Library" })),
+      h("div", { class: "who" }, h("span", null, h("b", { text: (b && b.name) || S.studentPreview }), " · Student"))),
+    h("div", { class: "preview-bar" },
+      h("span", null, h("b", null, "Student view preview. "), "This is what " + ((b && b.name) || S.studentPreview) + " would see. Students only see their own record."),
+      h("button", { class: "btn btn-sm btn-ghost", type: "button", onclick: exitStudentPreview, text: "Back to staff view" })),
+    h("nav", { class: "tabs", role: "tablist" }, STUDENT_TABS.map(([k, label]) =>
+      h("button", { class: "tab", role: "tab", id: "tab-" + k, "aria-selected": String(S.view === k), onclick: () => go(k) }, label))));
+  mainEl = h("main", { class: "section" });
+  app.append(mainEl);
+  views[S.view].mount(mainEl);
+  refresh();
+}
+
+function studentBlockers(b) {
+  const out = [];
+  const st = borrowerState(b);
+  if (!b) out.push("We couldn't find your record. Please visit the Tenant Support Office (Krupp A–D).");
+  else {
+    if (st.kind === "banned") out.push("You can't borrow items from the Lending Library (" + st.s.reason + "). Contact the Housing Team if you have questions.");
+    if (st.kind === "suspended") out.push("You're suspended from borrowing until " + fmtFull(st.s.until) + " (" + st.s.reason + ").");
+    if (!b.contract) out.push("Before your first loan, sign the Lending Library Contract Amendment at the Tenant Support Office (Krupp A–D).");
+    if (heldItems(b.id) >= S.settings.itemLimit) out.push("You already have " + S.settings.itemLimit + " items reserved or borrowed, the most allowed at once. You can request more once one is returned.");
+  }
+  return out;
+}
+
+function studentBorrowView() {
+  let box, pudo, outAt, backAt, picks = {};
+  return {
+    mount(root) {
+      const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(14, 0, 0, 0);
+      pudo = pudoSelect("sb-pudo", (pudos().find((p) => p.active) || {}).id);
+      outAt = h("input", { id: "sb-out", type: "datetime-local", value: toInput(t) });
+      backAt = h("input", { id: "sb-back", type: "datetime-local", value: toInput(addDays(t, S.settings.loanDays)) });
+      let backTouched = false;
+      outAt.addEventListener("change", () => { const o = ts(outAt.value); if (!isNaN(o) && !backTouched) backAt.value = toInput(addDays(o, S.settings.loanDays)); picks = {}; this.update(); });
+      backAt.addEventListener("change", () => { backTouched = true; picks = {}; this.update(); });
+      pudo.addEventListener("change", () => { picks = {}; this.update(); });
+      box = h("div", { class: "section" });
+      root.append(
+        h("h2", { text: "Borrow an item" }),
+        h("p", { class: "muted small", style: "margin:0;max-width:70ch", text: "Choose where and when you'd like to pick it up. Items are free to borrow for up to " + S.settings.loanDays + " days and must be returned to the same PUDO point. Requests must be made at least one day ahead. Bring your campus card to the pickup." }),
+        h("div", { class: "grid3" }, field("PUDO point", pudo), field("Pickup", outAt), field("Return (same place)", backAt)),
+        box);
+    },
+    update() {
+      box.textContent = "";
+      if (!S.loaded.items || !S.loaded.loans || !S.loaded.borrowers) { box.append(loading()); return; }
+      const b = meStudent();
+      const blockers = studentBlockers(b);
+      blockers.forEach((m) => box.append(h("div", { class: "banner bad", text: m })));
+      const a = ts(outAt.value), bk = ts(backAt.value);
+      const timeErr = isNaN(a) || isNaN(bk) ? "Choose a pickup and return time."
+        : !advanceOk(a) ? "The earliest pickup is tomorrow. Requests must be made at least one day ahead."
+        : bk <= a ? "The return has to be after the pickup."
+        : bk > addDays(a, S.settings.loanDays).getTime() + MIN ? "You can borrow items for up to " + S.settings.loanDays + " days."
+        : "";
+      if (timeErr) box.append(h("div", { class: "banner warn", text: timeErr }));
+      const left = b ? Math.max(0, S.settings.itemLimit - heldItems(b.id)) : 0;
+      // group the items at this PUDO point by name, with the units that are free for the chosen times
+      const groups = {};
+      S.items.filter((it) => it.pudo === pudo.value).forEach((it) => {
+        const g = groups[it.name] = groups[it.name] || { name: it.name, notes: it.notes, free: [], total: 0 };
+        if (it.condition === "broken" || it.condition === "missing") return;
+        g.total++;
+        if (!timeErr && !itemClash(it.id, a, bk)) g.free.push(it.id);
+      });
+      const list = Object.values(groups).filter((g) => g.total).sort((x, y) => x.name.localeCompare(y.name));
+      const chosen = () => Object.values(picks).reduce((x, y) => x + y, 0);
+      const rows = h("div", { class: "panel rows" });
+      if (!list.length) rows.append(h("p", { class: "muted", style: "margin:0;padding:14px", text: "There are no items at this PUDO point right now." }));
+      list.forEach((g) => {
+        const avail = g.free.length;
+        const qty = h("select", { "aria-label": "How many " + g.name, style: "width:auto", disabled: !!timeErr || !!blockers.length || !avail });
+        for (let i = 0; i <= Math.min(avail, left); i++) qty.append(h("option", { value: String(i), text: String(i) }));
+        qty.value = String(picks[g.name] || 0);
+        qty.addEventListener("change", () => {
+          const n = Number(qty.value), others = chosen() - (picks[g.name] || 0);
+          if (others + n > left) { qty.value = String(picks[g.name] || 0); toast("You can have " + S.settings.itemLimit + " items at once. You have " + left + " left.", true); return; }
+          picks[g.name] = n; drawSubmit();
+        });
+        rows.append(h("div", { class: "row" },
+          h("div", null, h("h3", { text: g.name }), g.notes ? h("div", { class: "sub", text: g.notes }) : null),
+          h("div", null, h("span", { class: "pill " + (avail ? "ready" : "booked"), text: timeErr ? g.total + " at this point" : avail ? avail + " available" : "Not available for these times" })),
+          h("div", { class: "acts" }, h("span", { class: "muted small", text: "Quantity" }), qty)));
+      });
+      box.append(rows);
+      const note = h("textarea", { id: "sb-note", rows: 2, placeholder: "Anything staff should know (optional)" });
+      const submit = h("button", { class: "btn btn-primary", type: "button", text: "Send request" });
+      const sumLine = h("span", { class: "muted small" });
+      const drawSubmit = () => {
+        const n = chosen();
+        submit.disabled = !!blockers.length || !!timeErr || !n;
+        sumLine.textContent = n ? n + " item" + (n === 1 ? "" : "s") + " selected · " + left + " of " + S.settings.itemLimit + " allowed" : "Choose at least one item.";
+      };
+      submit.addEventListener("click", async () => {
+        const ids = [];
+        for (const g of list) { const n = picks[g.name] || 0; ids.push(...g.free.slice(0, n)); }
+        if (!ids.length || blockers.length || timeErr) return;
+        submit.disabled = true;
+        try {
+          await api.add("loans", {
+            matric: b.id, borrowerName: b.name, pudo: pudo.value, itemIds: ids, itemNames: ids.map((id) => itemLabel(itemById(id))),
+            pickupAt: new Date(a).toISOString(), returnAt: new Date(bk).toISOString(), notes: norm(note.value),
+            status: "requested", deleted: false, request: { at: nowIso(), by: studentRef() },
+            booking: { at: nowIso(), by: studentRef(), checks: { contract: true } }, contacts: [], remind: {},
+          });
+          picks = {};
+          toast("Request sent. Staff will confirm it; you can follow it under My loans.");
+          go("s-loans");
+        } catch (e) { toast(errText(e), true); submit.disabled = false; }
+      });
+      drawSubmit();
+      box.append(field("Note (optional)", note), h("div", { class: "toolbar" }, submit, sumLine));
+    },
+  };
+}
+
+function studentLoansView() {
+  let box;
+  return {
+    mount(root) { box = h("div", { class: "list" }); root.append(h("h2", { text: "My loans" }), box); },
+    update() {
+      box.textContent = "";
+      if (!S.loaded.loans) { box.append(loading()); return; }
+      const mine = liveLoans().filter((l) => l.matric === S.studentPreview).sort((x, y) => ts(y.pickupAt) - ts(x.pickupAt));
+      if (!mine.length) { box.append(empty("No loans yet", "Requests you make under Borrow show up here.")); return; }
+      mine.forEach((l) => {
+        const st = loanState(l);
+        const card = h("article", { class: "loan is-" + st + (isOpen(l) ? "" : " is-closed") });
+        card.append(h("div", { class: "loan-top" },
+          h("div", null, h("h3", { text: (l.itemNames || []).map((n) => n.replace(/\s+[A-Z]{1,4}-\d+$/, "")).join(", ") }), h("div", { class: "muted small", text: pudoLabel(l.pudo) })),
+          h("span", { class: "pill " + st, text: STUDENT_LABEL[st] || st })));
+        card.append(h("div", { class: "slip" },
+          h("div", { class: "leg out" }, h("span", { class: "label", text: "Pickup" }), h("span", { class: "stamp", text: fmtFull(l.pickupAt) })),
+          h("div", { class: "leg back" }, h("span", { class: "label", text: "Return by" }), h("span", { class: "stamp", text: fmtFull(l.returnAt) }))));
+        const info = [];
+        if (st === "requested") info.push("Staff will confirm your request. Please check back here.");
+        if (st === "booked") info.push("Confirmed. Come to " + pudoShort(l.pudo) + " at the pickup time with your campus card.");
+        if (st === "out") info.push("Need more time? Ask for an extension at " + pudoShort(l.pudo) + " before " + fmtFull(l.returnAt) + ". One extension of up to " + S.settings.extensionDays + " days is possible if nobody else has booked the item.");
+        if (st === "overdue") info.push("This is overdue. Please return it to " + pudoShort(l.pudo) + " as soon as possible. Late returns cost €" + S.settings.lateFeePerDay + " per day, up to the item's value.");
+        if (l.status === "cancelled" && l.cancelReason) info.push(l.cancelReason);
+        if (info.length) card.append(h("div", { class: "loan-meta" }, info.map((t) => h("span", { text: t }))));
+        if ((l.status === "requested" || l.status === "booked") && ts(l.pickupAt) > Date.now()) {
+          card.append(h("div", { class: "loan-foot" }, armedButton("scancel:" + l.id, l.status === "requested" ? "Cancel request" : "Cancel reservation", "Yes, cancel it", async () => {
+            await api.update("loans", l.id, { status: "cancelled", cancelReason: "Cancelled by student", closedAt: nowIso(), closedBy: studentRef() });
+            toast("Cancelled.");
+          })));
+        }
+        box.append(card);
+      });
+    },
+  };
+}
+
+function studentStatusView() {
+  let box;
+  return {
+    mount(root) { box = h("div", { class: "section" }); root.append(h("h2", { text: "My status" }), box); },
+    update() {
+      box.textContent = "";
+      if (!S.loaded.borrowers || !S.loaded.loans) { box.append(loading()); return; }
+      const b = meStudent();
+      if (!b) { box.append(empty("No record found", "Please visit the Tenant Support Office (Krupp A–D).")); return; }
+      const st = borrowerState(b), n = countingNoShows(b).length, held = heldItems(b.id);
+      const tile = (label, value, tone, sub) => h("div", { class: "stat" + (tone ? " " + tone : "") }, h("div", { class: "v", text: value }), h("div", { class: "label", text: label }), sub ? h("div", { class: "muted small", text: sub }) : null);
+      box.append(h("div", { class: "summary" },
+        tile("Can borrow", st.kind === "suspended" || st.kind === "banned" ? "No" : "Yes", st.kind === "suspended" || st.kind === "banned" ? "hot" : "", st.s ? (st.kind === "banned" ? "Permanently" : "Until " + fmtDay(st.s.until)) : ""),
+        tile("Items in use", held + " / " + S.settings.itemLimit, held >= S.settings.itemLimit ? "warnish" : "", "Reserved or borrowed"),
+        tile("No-shows", n + " / " + S.settings.noShowLimit, n ? "warnish" : "", "Missed pickups"),
+        tile("Contract", b.contract ? "Signed" : "Missing", b.contract ? "" : "hot", b.contract ? "Since " + fmtDate(b.contract.at) : "Sign it at the TSO")));
+      if (st.s) box.append(h("div", { class: "banner bad", text: (st.kind === "banned" ? "You can't borrow items from the Lending Library. " : "You're suspended from borrowing until " + fmtFull(st.s.until) + ". ") + "Reason: " + st.s.reason + ". Questions? Contact the Housing Team." }));
+      box.append(h("section", { class: "panel", style: "padding:14px 16px" },
+        h("h3", { text: "The main rules" }),
+        h("ul", { class: "exp-list", style: "margin-top:8px" },
+          h("li", { text: "Request items at least one day before pickup. Pick up and return at the same PUDO point, with your campus card." }),
+          h("li", { text: "Up to " + S.settings.itemLimit + " items at a time, for up to " + S.settings.loanDays + " days. One extension of up to " + S.settings.extensionDays + " days if nobody else has booked the item." }),
+          h("li", { text: "If you can't make it, cancel before the pickup time. " + S.settings.noShowLimit + " no-shows mean a " + Math.round(S.settings.suspensionDays / 30) + "-month suspension." }),
+          h("li", { text: "Return items clean and complete. Late returns cost €" + S.settings.lateFeePerDay + " per day, up to the item's value; damage or loss is charged at repair or replacement cost." }))));
+    },
+  };
+}
+
+// Staff side: confirm or decline a student's request
+function openConfirmRequest(l) {
+  const b = borrowerOf(l.matric), st = borrowerState(b);
+  const blocked = st.kind === "suspended" || st.kind === "banned";
+  const issues = [];
+  if (blocked) issues.push(l.borrowerName + " is " + (st.kind === "banned" ? "banned" : "suspended until " + fmtFull(st.s.until)) + ".");
+  if (!(b && b.contract)) issues.push("No Contract Amendment on file.");
+  const held = heldItems(l.matric, l.id);
+  if (held + (l.itemIds || []).length > S.settings.itemLimit) issues.push("This would go over the " + S.settings.itemLimit + "-item limit (" + held + " already reserved or borrowed).");
+  const unavailable = (l.itemIds || []).filter((id) => { const it = itemById(id); return !it || it.condition !== "ok" && it.condition !== undefined || itemClash(id, ts(l.pickupAt), ts(l.returnAt), l.id); });
+  if (unavailable.length) issues.push("Not available any more: " + unavailable.map((id) => (itemById(id) ? itemLabel(itemById(id)) : id)).join(", ") + ". Edit the request to pick another unit, or decline it.");
+  openDialog("Confirm request", [
+    h("p", { class: "muted", style: "margin:0", text: l.borrowerName + " (" + l.matric + ") · " + (l.itemNames || []).join(", ") + " · " + pudoLabel(l.pudo) }),
+    h("p", { style: "margin:0", text: "Pickup " + fmtFull(l.pickupAt) + " · return " + fmtFull(l.returnAt) }),
+    l.notes ? h("p", { class: "muted", style: "margin:0", text: "Note from the student: " + l.notes }) : null,
+    issues.length ? h("div", { class: "section" }, issues.map((t) => h("div", { class: "banner bad", text: t }))) : h("div", { class: "banner info", text: "All checks passed. The campus card and on-campus residence are checked at pickup." }),
+  ], {
+    submitLabel: "Confirm reservation",
+    onSubmit: async () => {
+      if (issues.length) return "Resolve the problems above first, or decline the request.";
+      await api.update("loans", l.id, { status: "booked", confirmed: { at: nowIso(), by: meRef() } });
+      toast("Confirmed. The student sees it as confirmed, and reminders will go out.");
+    },
+  });
+}
+function openDeclineRequest(l) {
+  const reason = h("input", { id: "dr-reason", placeholder: "e.g. item needed for maintenance, please pick another day" });
+  openDialog("Decline request", [h("p", { class: "muted", style: "margin:0", text: "The student will see this reason under My loans." }), field("Reason", reason)], {
+    submitLabel: "Decline",
+    onSubmit: async () => {
+      if (!norm(reason.value)) return "Give a short reason for the student.";
+      await api.update("loans", l.id, { status: "cancelled", cancelReason: "Declined: " + norm(reason.value), closedAt: nowIso(), closedBy: meRef() });
+      toast("Request declined.");
+    },
+  });
+}
+
 // ---------------- sign-in screens ----------------
 function gate(title, text, ...content) {
   app.textContent = "";
@@ -1817,6 +2061,7 @@ function stopAll() { unsubs.forEach((u) => { try { u(); } catch (e) {} }); unsub
 
 function startData() {
   views = { today: todayView(), calendar: calendarView(), loans: loansView(), items: itemsView(), borrowers: borrowersView(), logs: logsView(), reports: reportsView(), experimental: experimentalView(), settings: settingsView() };
+  staffViews = views;
   const fail = (what) => (err) => { console.error(what, err); toast("Couldn't load " + what + ": " + errText(err), true); };
   let firstSettings = true;
   unsubs.push(api.watch("staff", (d) => { S.staff = d; schedule(); }, fail("staff")));

@@ -6,6 +6,7 @@
  *                      - reminders about 30 and 15 minutes before each pickup and return,
  *                        by email to the Housing mailbox and/or as a Teams channel post;
  *                      - a follow-up 30 minutes after a pickup or return that nobody has logged yet;
+ *                      - tells staff about new reservation requests from students;
  *                      - sends queued messages for the Housing Team (escalations, suspensions).
  *   morningSummary() every day around 7:00: what's late, today and tomorrow.
  *   weeklyReport()   every Monday around 8:00: which items were lent out last week and how often
@@ -39,7 +40,30 @@ function installTriggers() {
 function tick() {
   const settings = getSettings_();
   sendReminders_(settings);
+  sendRequestAlerts_(settings);
   sendOutbox_(settings);
+}
+
+// New reservation requests from students: tell staff once per request so they can confirm or decline it.
+function sendRequestAlerts_(settings) {
+  const reqs = runQuery_('loans', { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'requested' } } });
+  reqs.forEach(function (doc) {
+    const l = doc.data;
+    if (l.deleted === true || (l.remind && l.remind.requestAlert)) return;
+    const title = 'New request: ' + (l.itemNames || []).join(', ') + ' (' + l.borrowerName + ')';
+    const lines = [
+      'Pickup ' + Utilities.formatDate(new Date(l.pickupAt), TZ, 'EEE dd MMM, HH:mm') + ' at ' + pudoText_(settings, l.pudo),
+      'Return by ' + Utilities.formatDate(new Date(l.returnAt), TZ, 'EEE dd MMM, HH:mm'),
+      'Student: ' + l.borrowerName + ' (' + l.matric + ')',
+      l.notes ? 'Note: ' + l.notes : '',
+      'Confirm or decline it on the site (Today > Requests to confirm).',
+    ].filter(Boolean);
+    try {
+      patchPaths_('loans/' + doc.id, { 'remind.requestAlert': new Date().toISOString() }, doc.updateTime);
+      if (settings.emailReminders !== false && settings.notifyEmail) sendEmail_(settings.notifyEmail, '[Lending Library] ' + title, lines.join('\n'));
+      if (settings.teamsReminders !== false) postTeams_(title, lines);
+    } catch (e) { Logger.log('Request alert for ' + doc.id + ' skipped: ' + e); }
+  });
 }
 
 // ---------- reminders ----------

@@ -157,7 +157,7 @@ Probably never. Only if:
 
 ## Daily use, in one paragraph
 
-Reserve at the TSO with **New reservation** (it checks the contract amendment, ban list, 2-item limit and the 24-hour rule). At the PUDO point press **Hand over** (campus card, condition, briefing). If the student doesn't come within 15 minutes, press **No-show**; the third one suspends them for 3 months and tells the Housing Team. On return press **Returned** and tick clean/complete/undamaged; problems and lateness are escalated automatically. For overdue items, **Log contact** each attempt; after 4, **Escalate to Housing**. Tick the small **eRezLife** chips once each step is logged there. **Logs → Copy for Excel** gives rows to paste into the Teams spreadsheets.
+Reserve at the TSO with **New reservation** (it checks the contract amendment, ban list, 2-item limit and the 24-hour rule). At the PUDO point press **Hand over** (campus card, condition, briefing). If the student doesn't come within 15 minutes, press **No-show**; the third one suspends them for 3 months and tells the Housing Team. On return press **Returned** and tick clean/complete/undamaged; problems and lateness are escalated automatically. For overdue items, **Log contact** each attempt; after 4, **Escalate to Housing**. **Logs → Copy for Excel** gives rows to paste into the Teams spreadsheets.
 
 ## Free limits
 

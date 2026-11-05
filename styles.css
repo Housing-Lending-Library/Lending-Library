@@ -247,3 +247,10 @@ input[type=file]{padding:6px;background:var(--surface)}
 .who-box .check{font-weight:600}
 .day-export{display:inline-flex;gap:6px;align-items:center}
 .day-input{width:auto;padding:5px 8px;font-size:13px}
+
+/* student view */
+.pill.requested{background:var(--wait-soft);color:var(--wait)}
+.preview-bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;background:var(--accent-soft);color:var(--ink);border:1px dashed var(--accent);border-radius:10px;padding:10px 14px;font-size:14px}
+.pick-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);font:inherit;padding:10px 12px;cursor:pointer}
+.pick-row:hover{background:var(--bg)}
+.pick-row + .pick-row{border-top:1px solid var(--line)}
