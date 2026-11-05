@@ -1760,7 +1760,18 @@ function experimentalView() {
 const STUDENT_TABS = [["s-borrow", "Borrow"], ["s-loans", "My loans"], ["s-status", "My status"]];
 const STUDENT_LABEL = { requested: "Waiting for confirmation", booked: "Confirmed", missed: "Pickup missed", out: "Borrowed", overdue: "Overdue, please return", returned: "Returned", noshow: "No-show", cancelled: "Cancelled", notreturned: "Not returned" };
 let staffViews = null;
-const meStudent = () => borrowerOf(S.studentPreview);
+// "Sample student": preview the student view without any real student record. Nothing is saved.
+const SAMPLE_ID = "00000000";
+const isSample = () => S.studentPreview === SAMPLE_ID;
+let sampleBorrower = null;
+const meStudent = () => {
+  if (!isSample()) return borrowerOf(S.studentPreview);
+  if (!sampleBorrower) sampleBorrower = { id: SAMPLE_ID, matric: SAMPLE_ID, name: "Sample Student", contract: { at: nowIso(), by: { name: "preview" } }, noShows: [], violations: [], suspensions: [] };
+  return sampleBorrower;
+};
+S.sampleLoans = [];
+const studentLoans = () => (isSample() ? S.sampleLoans.filter((l) => !l.deleted) : liveLoans().filter((l) => l.matric === S.studentPreview));
+const studentHeld = (b) => (isSample() ? S.sampleLoans.filter(isOpen).reduce((n, l) => n + (l.itemIds || []).length, 0) : heldItems(b.id));
 const studentRef = () => { const b = meStudent(); return { email: "student:" + S.studentPreview, name: ((b && b.name) || S.studentPreview) + " (student)" }; };
 
 function openStudentPicker() {
@@ -1777,6 +1788,9 @@ function openStudentPicker() {
   q.addEventListener("input", draw); draw();
   openDialog("Student view (preview)", [
     h("p", { class: "muted", style: "margin:0", text: "See the site the way a student would: request items, check their loans and their own status. Pick a student to preview it with their record. Anything you request here is real (it creates a request that staff confirm)." }),
+    h("div", { class: "toolbar" },
+      h("button", { class: "btn btn-primary btn-sm", type: "button", text: "Preview with a sample student", onclick: () => { dlg.close(); enterStudentPreview(SAMPLE_ID); } }),
+      h("span", { class: "muted small", text: "No real record needed. Nothing is saved." })),
     q, list]);
 }
 function enterStudentPreview(matric) {
@@ -1796,7 +1810,7 @@ function renderStudentShell() {
       h("h1", null, "Lending ", h("span", { text: "Library" })),
       h("div", { class: "who" }, h("span", null, h("b", { text: (b && b.name) || S.studentPreview }), " · Student"))),
     h("div", { class: "preview-bar" },
-      h("span", null, h("b", null, "Student view preview. "), "This is what " + ((b && b.name) || S.studentPreview) + " would see. Students only see their own record."),
+      h("span", null, h("b", null, "Student view preview. "), isSample() ? "Shown with a sample student. Requests you make here aren't saved and real students' data isn't used." : "This is what " + ((b && b.name) || S.studentPreview) + " would see. Students only see their own record."),
       h("button", { class: "btn btn-sm btn-ghost", type: "button", onclick: exitStudentPreview, text: "Back to staff view" })),
     h("nav", { class: "tabs", role: "tablist" }, STUDENT_TABS.map(([k, label]) =>
       h("button", { class: "tab", role: "tab", id: "tab-" + k, "aria-selected": String(S.view === k), onclick: () => go(k) }, label))));
@@ -1814,7 +1828,7 @@ function studentBlockers(b) {
     if (st.kind === "banned") out.push("You can't borrow items from the Lending Library (" + st.s.reason + "). Contact the Housing Team if you have questions.");
     if (st.kind === "suspended") out.push("You're suspended from borrowing until " + fmtFull(st.s.until) + " (" + st.s.reason + ").");
     if (!b.contract) out.push("Before your first loan, sign the Lending Library Contract Amendment at the Tenant Support Office (Krupp A–D).");
-    if (heldItems(b.id) >= S.settings.itemLimit) out.push("You already have " + S.settings.itemLimit + " items reserved or borrowed, the most allowed at once. You can request more once one is returned.");
+    if (studentHeld(b) >= S.settings.itemLimit) out.push("You already have " + S.settings.itemLimit + " items reserved or borrowed, the most allowed at once. You can request more once one is returned.");
   }
   return out;
 }
@@ -1851,7 +1865,7 @@ function studentBorrowView() {
         : bk > addDays(a, S.settings.loanDays).getTime() + MIN ? "You can borrow items for up to " + S.settings.loanDays + " days."
         : "";
       if (timeErr) box.append(h("div", { class: "banner warn", text: timeErr }));
-      const left = b ? Math.max(0, S.settings.itemLimit - heldItems(b.id)) : 0;
+      const left = b ? Math.max(0, S.settings.itemLimit - studentHeld(b)) : 0;
       // group the items at this PUDO point by name, with the units that are free for the chosen times
       const groups = {};
       S.items.filter((it) => it.pudo === pudo.value).forEach((it) => {
@@ -1893,13 +1907,21 @@ function studentBorrowView() {
         for (const g of list) { const n = picks[g.name] || 0; ids.push(...g.free.slice(0, n)); }
         if (!ids.length || blockers.length || timeErr) return;
         submit.disabled = true;
+        const loan = {
+          matric: b.id, borrowerName: b.name, pudo: pudo.value, itemIds: ids, itemNames: ids.map((id) => itemLabel(itemById(id))),
+          pickupAt: new Date(a).toISOString(), returnAt: new Date(bk).toISOString(), notes: norm(note.value),
+          status: "requested", deleted: false, request: { at: nowIso(), by: studentRef() },
+          booking: { at: nowIso(), by: studentRef(), checks: { contract: true } }, contacts: [], remind: {},
+        };
         try {
-          await api.add("loans", {
-            matric: b.id, borrowerName: b.name, pudo: pudo.value, itemIds: ids, itemNames: ids.map((id) => itemLabel(itemById(id))),
-            pickupAt: new Date(a).toISOString(), returnAt: new Date(bk).toISOString(), notes: norm(note.value),
-            status: "requested", deleted: false, request: { at: nowIso(), by: studentRef() },
-            booking: { at: nowIso(), by: studentRef(), checks: { contract: true } }, contacts: [], remind: {},
-          });
+          if (isSample()) {
+            S.sampleLoans.push({ ...loan, id: "sample" + S.sampleLoans.length });
+            picks = {};
+            toast("Sample preview: the request shows under My loans, but nothing was saved or sent.");
+            go("s-loans");
+            return;
+          }
+          await api.add("loans", loan);
           picks = {};
           toast("Request sent. Staff will confirm it; you can follow it under My loans.");
           go("s-loans");
@@ -1918,7 +1940,7 @@ function studentLoansView() {
     update() {
       box.textContent = "";
       if (!S.loaded.loans) { box.append(loading()); return; }
-      const mine = liveLoans().filter((l) => l.matric === S.studentPreview).sort((x, y) => ts(y.pickupAt) - ts(x.pickupAt));
+      const mine = studentLoans().sort((x, y) => ts(y.pickupAt) - ts(x.pickupAt));
       if (!mine.length) { box.append(empty("No loans yet", "Requests you make under Borrow show up here.")); return; }
       mine.forEach((l) => {
         const st = loanState(l);
@@ -1938,7 +1960,8 @@ function studentLoansView() {
         if (info.length) card.append(h("div", { class: "loan-meta" }, info.map((t) => h("span", { text: t }))));
         if ((l.status === "requested" || l.status === "booked") && ts(l.pickupAt) > Date.now()) {
           card.append(h("div", { class: "loan-foot" }, armedButton("scancel:" + l.id, l.status === "requested" ? "Cancel request" : "Cancel reservation", "Yes, cancel it", async () => {
-            await api.update("loans", l.id, { status: "cancelled", cancelReason: "Cancelled by student", closedAt: nowIso(), closedBy: studentRef() });
+            if (isSample()) Object.assign(l, { status: "cancelled", cancelReason: "Cancelled by student", closedAt: nowIso() });
+            else await api.update("loans", l.id, { status: "cancelled", cancelReason: "Cancelled by student", closedAt: nowIso(), closedBy: studentRef() });
             toast("Cancelled.");
           })));
         }
@@ -1957,7 +1980,7 @@ function studentStatusView() {
       if (!S.loaded.borrowers || !S.loaded.loans) { box.append(loading()); return; }
       const b = meStudent();
       if (!b) { box.append(empty("No record found", "Please visit the Tenant Support Office (Krupp A–D).")); return; }
-      const st = borrowerState(b), n = countingNoShows(b).length, held = heldItems(b.id);
+      const st = borrowerState(b), n = countingNoShows(b).length, held = studentHeld(b);
       const tile = (label, value, tone, sub) => h("div", { class: "stat" + (tone ? " " + tone : "") }, h("div", { class: "v", text: value }), h("div", { class: "label", text: label }), sub ? h("div", { class: "muted small", text: sub }) : null);
       box.append(h("div", { class: "summary" },
         tile("Can borrow", st.kind === "suspended" || st.kind === "banned" ? "No" : "Yes", st.kind === "suspended" || st.kind === "banned" ? "hot" : "", st.s ? (st.kind === "banned" ? "Permanently" : "Until " + fmtDay(st.s.until)) : ""),
