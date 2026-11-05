@@ -566,17 +566,41 @@ function openContact(l) {
   const when = h("input", { id: "k-when", type: "datetime-local", value: toInput(new Date()) });
   const method = h("select", { id: "k-method" }, ["Email", "Outlook/Teams message", "In person", "Phone"].map((m) => h("option", { value: m, text: m })));
   const note = h("input", { id: "k-note", placeholder: "e.g. no reply yet" });
+  // Who made the contact: defaults to the signed-in person, can be changed, must be confirmed.
+  const staff = S.staff.filter((x) => x.active !== false).sort((a, b) => lc(a.name || a.id).localeCompare(lc(b.name || b.id)));
+  const who = h("select", { id: "k-who", class: "who-select", required: true },
+    h("option", { value: "", text: "Choose who contacted the student" }),
+    staff.map((x) => h("option", { value: x.id, text: (x.name || x.id) + (x.id === S.user.email ? " (you)" : "") })));
+  who.value = staff.some((x) => x.id === S.user.email) ? S.user.email : "";
+  const confirm = check("k-confirm", "", false);
+  const whoBox = h("div", { class: "who-box" });
+  const draw = () => {
+    const x = staff.find((y) => y.id === who.value);
+    whoBox.classList.toggle("missing", !x);
+    confirm.el.querySelector("span").textContent = x ? "Yes, " + (x.name || x.id) + " made this contact" : "Choose a person first";
+    confirm.input.checked = false;
+    confirm.input.disabled = !x;
+  };
+  who.addEventListener("change", () => { draw(); const e = dlg.querySelector(".dlg-foot .err"); if (e) e.textContent = ""; });
+  whoBox.append(h("label", { for: "k-who", class: "label", text: "Contacted by (required)" }), who, confirm.el);
+  draw();
   const n = (l.contacts || []).length;
   openDialog("Log contact attempt", [
     h("p", { class: "muted", text: l.borrowerName + " (" + l.matric + ") · " + (l.itemNames || []).join(", ") + " · due " + fmtFull(l.returnAt) + ". This will be attempt " + (n + 1) + "." }),
+    whoBox,
     h("div", { class: "grid2" }, field("When", when), field("How", method)), field("Note", note),
   ], {
     submitLabel: "Log attempt",
     onSubmit: async () => {
+      const x = staff.find((y) => y.id === who.value);
+      if (!x) { who.focus(); return "Choose who contacted the student."; }
+      if (!confirm.input.checked) { confirm.input.focus(); return "Confirm that " + (x.name || x.id) + " made this contact."; }
       const t = ts(when.value);
-      if (isNaN(t)) return "Enter when you contacted them.";
-      await api.update("loans", l.id, { contacts: [...(l.contacts || []), { at: new Date(t).toISOString(), method: method.value, note: norm(note.value), by: meRef() }] });
-      toast("Attempt " + (n + 1) + " logged.");
+      if (isNaN(t)) return "Enter when they were contacted.";
+      const entry = { at: new Date(t).toISOString(), method: method.value, note: norm(note.value), by: { email: x.id, name: x.name || x.id } };
+      if (x.id !== S.user.email) entry.loggedBy = meRef();
+      await api.update("loans", l.id, { contacts: [...(l.contacts || []), entry] });
+      toast("Attempt " + (n + 1) + " logged for " + (x.name || x.id) + ".");
     },
   });
 }
@@ -784,7 +808,7 @@ function loanCard(l) {
   if (l.returned) meta.push("Returned " + fmtFull(l.returned.at) + " to " + l.returned.by.name + ((l.returned.issues || []).length ? " · " + l.returned.issues.join(", ") : "") + (l.returned.lateDays ? " · " + l.returned.lateDays + " day(s) late, fee up to " + euro(l.returned.fee) : "") + (l.returned.note ? " · " + l.returned.note : "") + (l.returned.escalated ? " · escalated to Housing" : ""));
   if (l.status === "cancelled") meta.push("Cancelled: " + (l.cancelReason || ""));
   if (l.status === "noshow") meta.push("No-show logged" + (l.closedBy ? " by " + l.closedBy.name : ""));
-  if ((l.contacts || []).length) meta.push("Contact attempts: " + l.contacts.map((c) => fmtDay(c.at) + " " + fmtTime(c.at) + " (" + c.method + ")").join(", "));
+  if ((l.contacts || []).length) meta.push("Contact attempts: " + l.contacts.map((c) => fmtDay(c.at) + " " + fmtTime(c.at) + " (" + c.method + (c.by ? ", by " + c.by.name : "") + ")").join(", "));
   meta.push("Reserved by " + ((l.booking && l.booking.by && l.booking.by.name) || "unknown") + (l.booking ? " on " + fmtDay(l.booking.at) : ""));
   card.append(h("div", { class: "loan-meta" }, meta.map((t) => h("span", { text: t })), erezChips(l)));
   const foot = h("div", { class: "loan-foot" });
@@ -1438,8 +1462,8 @@ const isoWeek = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDat
 const typeOf = (id, fallbackName) => { const it = itemById(id); return it ? it.name : norm(fallbackName).replace(/\s+[A-Z]{1,4}-\d+$/, "") || "Unknown item"; };
 const lentAt = (l) => (l.handover && l.handover.at) || (["out", "returned", "notreturned"].includes(l.status) ? l.pickupAt : null);
 
-function weekStats(a) {
-  const b = addDays(a, 7).getTime();
+function weekStats(a) { return rangeStats(a, addDays(a, 7).getTime()); }
+function rangeStats(a, b) {
   const inWeek = (iso) => iso && ts(iso) >= a && ts(iso) < b;
   const types = {}, pudoCount = {};
   const T = (name) => (types[name] = types[name] || { name, lent: 0, units: new Set(), hours: [], noshows: 0, late: 0, booked: 0 });
@@ -1497,6 +1521,7 @@ function reportsView() {
       box.append(h("div", { class: "toolbar", style: "justify-content:space-between" },
         h("h3", null, weekLabel(w.a), current ? h("span", { class: "pill booked", style: "margin-left:8px", text: "So far" }) : null),
         h("div", { class: "toolbar" },
+          dayPicker(w),
           h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Download week (CSV)", onclick: () => downloadCsv("lending-library-week-" + isoWeek(w.a) + "-" + new Date(w.a).getFullYear() + ".csv", weekCsv(w)) }),
           h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Last 12 weeks (CSV)", onclick: () => downloadCsv("lending-library-12-weeks.csv", trendCsv(12)) }))));
       box.append(h("div", { class: "summary" },
@@ -1525,6 +1550,26 @@ function reportsView() {
       if (w.unused.length) box.append(h("p", { class: "muted small", style: "margin:0", text: "Not lent out this week: " + w.unused.join(", ") }));
     },
   };
+}
+function dayPicker(w) {
+  const now = Date.now();
+  const def = now >= w.a && now < w.b ? startOfDay(now) : w.a;
+  const day = h("input", { id: "rep-day", type: "date", "aria-label": "Day to export", class: "day-input",
+    value: (() => { const d = new Date(def); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); })() });
+  const btn = h("button", { class: "btn btn-ghost btn-sm", type: "button", text: "Download day (CSV)", onclick: () => {
+    const [y, m, d] = day.value.split("-").map(Number);
+    if (!y) { toast("Pick a day first.", true); return; }
+    const a = new Date(y, m - 1, d).getTime();
+    downloadCsv("lending-library-day-" + day.value + ".csv", dayCsv(rangeStats(a, addDays(a, 1).getTime())));
+  } });
+  return h("span", { class: "day-export" }, day, btn);
+}
+function dayCsv(r) {
+  const date = fmtDate(new Date(r.a).toISOString());
+  const head = ["Date", "Item", "Times lent out", "Units used", "In stock", "Avg. days out", "Reserved", "No-shows", "Late returns"];
+  const rows = r.rows.map((x) => [date, x.name, x.lent, x.units, x.stock, x.avgDays === null ? "" : Math.round(x.avgDays * 10) / 10, x.booked, x.noshows, x.late]);
+  return [head, ...(rows.length ? rows : [[date, "(nothing lent out)", 0, 0, "", "", r.booked, r.noshows, 0]]),
+    [], ["Totals", "", r.lentItems, "", "", "", r.booked, r.noshows, r.late], ["Loans handed over", r.lentLoans], ["Returned", r.returned]];
 }
 function weekCsv(w) {
   return [["Week", "From", "To", "Item", "Times lent out", "Units used", "In stock", "Avg. days out", "Reserved", "No-shows", "Late returns"],

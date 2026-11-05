@@ -238,3 +238,12 @@ input[type=file]{padding:6px;background:var(--surface)}
 .trend-col.sel .trend-bar,.trend-col:hover .trend-bar{background:var(--accent)}
 .trend-n{font:600 12px var(--font-mono);font-variant-numeric:tabular-nums}
 .trend-w{font:500 11px var(--font-mono);color:var(--muted)}
+
+/* contact attempt: who made the contact */
+.who-box{display:grid;gap:8px;border:2px solid var(--accent);background:var(--accent-soft);border-radius:10px;padding:12px}
+.who-box.missing{border-color:var(--late);background:var(--late-soft)}
+.who-box .label{color:var(--ink)}
+.who-select{font-weight:600;font-size:15px;background:var(--surface)}
+.who-box .check{font-weight:600}
+.day-export{display:inline-flex;gap:6px;align-items:center}
+.day-input{width:auto;padding:5px 8px;font-size:13px}
